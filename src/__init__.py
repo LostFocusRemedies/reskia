@@ -1,7 +1,5 @@
 """
 Reskia - A minimalist, extensible drawing application.
-
-Emacs-style command system with modal input.
 """
 
 from .Brush import Brush, BrushPoint, COMPOSITION_MODES, COMPOSITION_MODE_NAMES
