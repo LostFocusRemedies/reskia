@@ -13,6 +13,17 @@ import PySide6.QtWidgets as QtWidgets
 
 from MainWindow import MainWindow, load_or_create_project
 
+# This tells the EXE: "Look for modules in the folder where the code is unpacked"
+if getattr(sys, 'frozen', False):
+    # Extract the path to the temporary folder where PyInstaller unpacked everything
+    bundle_dir = sys._MEIPASS
+    # Add the 'src' folder inside that bundle to the Python search path
+    sys.path.append(os.path.join(bundle_dir, 'src'))
+
+
+
+
+
 if __name__ == "__main__":
     import argparse
 
