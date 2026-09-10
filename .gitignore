@@ -3,3 +3,8 @@ dist/
 release/
 *.spec
 __pycache__/
+
+# Odin rewrite
+odin/reskia.exe
+odin/*.dll
+odin/*.pdb
