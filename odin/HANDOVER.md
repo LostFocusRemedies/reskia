@@ -37,43 +37,30 @@ package, small files, no build system, no frameworks, no hidden machinery.
 - Test: `cd odin && odin test src`.
 - Run from any CWD: `commands.lua` is probed in CWD first, then exe dir.
 
-## Current state — IMPORTANT
+## Current state
 
-Commit `df1b865` (skeleton) is the only commit on `odin-rewrite`.
-**Everything since is uncommitted working tree.** Committing is pending.
+Brush/pressure/Lua/chords all validated by the user. Tests green.
 
-Working and validated:
-- WinTab pressure on the user's real tablet (confirmed by user).
-- Prototype brush feel: `size = min + (size-min)*p`, stamps at `SPACING 0.15`
-  with per-stamp pressure interpolation + cross-segment accumulator;
-  accumulation toggle `A`; `m1`/`m3`/`M` normal/multiply; opacity `o1..o0`;
-  eraser = true destination-out via custom GL blend; pressure-reactive ring
-  cursor (OS cursor hidden); `press:%` in the status bar.
-- Lua commands register and fire (`gr`, `bf`, `bn`, `cb` in `commands.lua`);
-  on-screen status message `lua: N commands loaded` (or the error).
-- Chords: dead-end drops oldest char and retries; 1.5 s timeout fires a
-  pending exact match (keeps `b` usable though `bf`/`bn` share its prefix).
-
-**One red test:** `chord_dead_end_retries_char` fails with a garbage value
-(e.g. 9.090909). This is a TEST bug, not an app bug: `odin test` runs tests
-on 2 threads and both tests share the global `g_app`/`g_context`, racing on
-registration and Lua states. Fix by merging the two `@(test)` procs in
-`odin/src/lua_api_test.odin` into one proc (or run with
-`-define:ODIN_TEST_THREADS=1`). Do this first, then commit.
+Per-keyframe canvases (roadmap 2a) are in: `Keyframe` owns a `^KeyPixels`
+(lazy texture alloc, copy-on-write sharing for duplicate keys), strokes
+paint into `layer_paint_target`. Layer compositing at draw time is basic
+(visible layers bottom-up); onion skin and stage-2 zlib-blob caching are
+not yet. Awaiting user run-validation of the new per-keyframe behavior.
 
 ## File map (`odin/src/`)
 
-| File | Owns |
-|---|---|
-| `main.odin` | window, main loop, input routing, cursor ring, status/message lines, script-path probing |
-| `app.odin` | the one `App` struct; `Brush` + pressure mapping procs |
-| `command.odin` | `Command`/`Registry`, chord engine (retry + timeout), which-key, core commands |
-| `canvas.odin` | render textures (target/buffer/backup), stroke pipeline, blend setup |
-| `timeline.odin` | Layer/Keyframe model stub (sorted insert, frame step) |
-| `lua_api.odin` | `reskia.*` table, `g_app`/`g_context`, script load procs |
-| `tablet_windows.odin` | WinTab backend (pressure only) |
-| `tablet_stub.odin` | `#+build !windows` no-op backend |
-| `lua_api_test.odin` | headless registry/Lua tests (no GL needed) |
+| File                  | Owns                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `main.odin`           | window, main loop, input routing, cursor ring, status/message lines, script-path probing |
+| `app.odin`            | the one `App` struct; `Brush` + pressure mapping procs                                   |
+| `command.odin`        | `Command`/`Registry`, chord engine (retry + timeout), which-key, core commands           |
+| `canvas.odin`         | render textures (target/buffer/backup), stroke pipeline, blend setup                     |
+| `timeline.odin`       | Layer/Keyframe model, `KeyPixels` (lazy alloc + COW), paint-target resolution |
+| `lua_api.odin`        | `reskia.*` table, `g_app`/`g_context`, script load procs                                 |
+| `tablet_windows.odin` | WinTab backend (pressure only)                                                           |
+| `tablet_stub.odin`    | `#+build !windows` no-op backend                                                         |
+| `lua_api_test.odin`   | headless registry/Lua tests (no GL needed)                                               |
+| `timeline_test.odin`  | headless timeline model tests (hold, sorted insert, COW)                                 |
 
 ## Hard-won gotchas (don't rediscover these)
 
@@ -106,9 +93,10 @@ registration and Lua states. Fix by merging the two `@(test)` procs in
 
 ## Roadmap (roughly in priority order)
 
-1. Merge the failing test, commit current work.
-2. Per-keyframe canvases + layer compositing/onion skin (Timeline model
-   already has the shape; keyframes need their own RenderTextures).
+1. ~~Merge the failing test, commit current work.~~ Done (also fixed the
+   wrong assertion: `q` shrinks size multiplicatively, `/1.1`).
+2. ~~Per-keyframe canvases~~ (2a done: lazy + COW) → onion skin (2b),
+   then stage-2 zlib-blob-as-truth + GPU cache behind the same API.
 3. `.reskia` ZIP save/load (project.json + zlib RGBA per keyframe, see the
    format doc comment at the top of `../src/Timeline.py`).
 4. Undo (render-texture snapshots, like the prototype's `save_undo_state`).

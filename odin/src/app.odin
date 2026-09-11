@@ -65,5 +65,6 @@ app_init :: proc(canvas_w, canvas_h: i32) -> App {
 }
 
 app_shutdown :: proc(app: ^App) {
+	timeline_shutdown(&app.timeline)
 	canvas_shutdown(&app.canvas)
 }

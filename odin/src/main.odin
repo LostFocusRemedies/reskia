@@ -86,7 +86,9 @@ handle_input :: proc(app: ^App) {
 		if app.drawing {
 			canvas_stroke_to(&app.canvas, mouse, stroke_pressure(app), &app.brush)
 		} else {
-			canvas_begin_stroke(&app.canvas, mouse, stroke_pressure(app), &app.brush)
+			l := &app.timeline.layers[app.timeline.active_layer]
+			target := layer_paint_target(l, app.timeline.current_frame, app.canvas.w, app.canvas.h)
+			canvas_begin_stroke(&app.canvas, target, mouse, stroke_pressure(app), &app.brush)
 			app.drawing = true
 		}
 	} else if app.drawing {
@@ -97,6 +99,9 @@ handle_input :: proc(app: ^App) {
 	// Special (non-character) keys first, then character chords.
 	if rl.IsKeyPressed(.F6) {
 		registry_exec(&app.registry, app, "insert-keyframe")
+	}
+	if rl.IsKeyPressed(.F7) {
+		registry_exec(&app.registry, app, "insert-blank-keyframe")
 	}
 	if rl.IsKeyDown(.LEFT_ALT) {
 		if rl.IsKeyPressed(.COMMA)  do registry_exec(&app.registry, app, "frame-prev")
@@ -114,7 +119,7 @@ draw :: proc(app: ^App) {
 	rl.ClearBackground({30, 30, 30, 255})
 
 	rl.BeginMode2D(app.camera)
-	canvas_draw(app.canvas)
+	canvas_draw(app.canvas, &app.timeline)
 	cursor_draw(app)
 	rl.EndMode2D()
 

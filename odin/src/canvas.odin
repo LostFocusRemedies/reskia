@@ -23,17 +23,17 @@ StrokePoint :: struct {
 }
 
 Canvas :: struct {
-	target, buffer, backup: rl.RenderTexture2D,
-	w, h:                   i32,
-	drawing:                bool,
-	stroke_tablet:          bool, // this stroke is pen-driven
-	last:                   StrokePoint,
-	spacing_acc:            f32,
+	buffer, backup: rl.RenderTexture2D, // stroke-time scratch (shared)
+	target:         rl.RenderTexture2D, // current stroke's destination (a keyframe's)
+	w, h:           i32,
+	drawing:        bool,
+	stroke_tablet:  bool, // this stroke is pen-driven
+	last:           StrokePoint,
+	spacing_acc:    f32,
 }
 
 canvas_init :: proc(w, h: i32) -> Canvas {
 	c := Canvas {
-		target = rl.LoadRenderTexture(w, h),
 		buffer = rl.LoadRenderTexture(w, h),
 		backup = rl.LoadRenderTexture(w, h),
 		w = w, h = h,
@@ -42,20 +42,14 @@ canvas_init :: proc(w, h: i32) -> Canvas {
 	// Stored once; BeginBlendMode(.CUSTOM) reuses these factors.
 	rlgl.SetBlendFactors(rlgl.ZERO, rlgl.ONE_MINUS_SRC_ALPHA, rlgl.FUNC_ADD)
 
-	canvas_clear_rt(&c.target)
 	canvas_clear_rt(&c.buffer)
 	canvas_clear_rt(&c.backup)
 	return c
 }
 
 canvas_shutdown :: proc(c: ^Canvas) {
-	rl.UnloadRenderTexture(c.target)
 	rl.UnloadRenderTexture(c.buffer)
 	rl.UnloadRenderTexture(c.backup)
-}
-
-canvas_clear :: proc(c: ^Canvas) {
-	canvas_clear_rt(&c.target)
 }
 
 canvas_clear_rt :: proc(rt: ^rl.RenderTexture2D) {
@@ -66,8 +60,11 @@ canvas_clear_rt :: proc(rt: ^rl.RenderTexture2D) {
 
 // --- strokes ---------------------------------------------------------------
 
-canvas_begin_stroke :: proc(c: ^Canvas, pos: rl.Vector2, pressure: f32, b: ^Brush) {
+// The destination is resolved by the caller (timeline layer_paint_target):
+// the held keyframe's texture, after lazy alloc + copy-on-write.
+canvas_begin_stroke :: proc(c: ^Canvas, target: rl.RenderTexture2D, pos: rl.Vector2, pressure: f32, b: ^Brush) {
 	c.drawing = true
+	c.target = target
 	c.stroke_tablet = tablet_active()
 	c.spacing_acc = 0
 	c.last = {pos, pressure}
@@ -178,7 +175,15 @@ draw_rt :: proc(tex: rl.Texture2D, tint: rl.Color) {
 	rl.DrawTextureRec(tex, {0, 0, f32(tex.width), -f32(tex.height)}, {0, 0}, tint)
 }
 
-canvas_draw :: proc(c: Canvas) {
-	draw_rt(c.target.texture, rl.WHITE)
+// Composite the frame: visible layers bottom-up, each contributing the
+// image of its key held at the current frame.
+canvas_draw :: proc(c: Canvas, t: ^Timeline) {
+	for &l in t.layers {
+		if !l.visible do continue
+		k := layer_key_at(&l, t.current_frame)
+		if k != nil && k.pixels != nil && k.pixels.loaded {
+			draw_rt(k.pixels.rt.texture, rl.WHITE)
+		}
+	}
 	rl.DrawRectangleLines(0, 0, c.w, c.h, {255, 255, 255, 40})
 }

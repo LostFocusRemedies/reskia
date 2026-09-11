@@ -129,8 +129,9 @@ register_core_commands :: proc(reg: ^Registry) {
 	registry_register(reg, "eraser",          "e",    "Eraser tool",     cmd_eraser)
 	registry_register(reg, "size-increase",   "w",    "Increase size",   cmd_size_up)
 	registry_register(reg, "size-decrease",   "q",    "Decrease size",   cmd_size_down)
-	registry_register(reg, "clear-frame",     "kc",   "Clear frame",     cmd_clear_frame)
-	registry_register(reg, "insert-keyframe", "kk",   "Insert keyframe", cmd_insert_keyframe)
+	registry_register(reg, "clear-frame",     "kc",   "Clear frame",          cmd_clear_frame)
+	registry_register(reg, "insert-keyframe", "ki",   "Insert keyframe (dup)", cmd_insert_keyframe)
+	registry_register(reg, "insert-blank-keyframe", "kk", "Insert blank keyframe", cmd_insert_blank_keyframe)
 	registry_register(reg, "frame-prev",      "A-,",  "Previous frame",  cmd_frame_prev)
 	registry_register(reg, "frame-next",      "A-.",  "Next frame",      cmd_frame_next)
 
@@ -181,10 +182,24 @@ cmd_toggle_accum :: proc(app: ^App, arg: f32) {
 
 cmd_tool_swap :: proc(app: ^App, arg: f32) { app.brush.eraser = !app.brush.eraser }
 
-cmd_clear_frame :: proc(app: ^App, arg: f32) { canvas_clear(&app.canvas) }
+// Clears the held key's image at the current frame (same paint-target
+// resolution as strokes: lazy alloc + COW, so a shared key detaches first).
+cmd_clear_frame :: proc(app: ^App, arg: f32) {
+	l := &app.timeline.layers[app.timeline.active_layer]
+	rt := layer_paint_target(l, app.timeline.current_frame, app.canvas.w, app.canvas.h)
+	canvas_clear_rt(&rt)
+}
 
+// Prototype's F6 / "k i": insert a key duplicating the held image (COW-shared).
 cmd_insert_keyframe :: proc(app: ^App, arg: f32) {
-	timeline_insert_keyframe(&app.timeline, app.timeline.current_frame)
+	l := &app.timeline.layers[app.timeline.active_layer]
+	layer_insert_keyframe(l, app.timeline.current_frame, duplicate = true)
+}
+
+// Prototype's F7 / "k k": insert a blank key.
+cmd_insert_blank_keyframe :: proc(app: ^App, arg: f32) {
+	l := &app.timeline.layers[app.timeline.active_layer]
+	layer_insert_keyframe(l, app.timeline.current_frame, duplicate = false)
 }
 
 cmd_frame_prev :: proc(app: ^App, arg: f32) { timeline_step_frame(&app.timeline, -1) }
