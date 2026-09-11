@@ -24,6 +24,8 @@ TP_KEY     :: rl.Color{0xe0, 0xe0, 0xe0, 255}
 TP_HOLD    :: rl.Color{0x55, 0x55, 0x55, 255}
 TP_EMPTY   :: rl.Color{0x33, 0x33, 0x33, 255}
 TP_ACTIVE  :: rl.Color{0x3d, 0x5a, 0x80, 255}
+TP_DRAG    :: rl.Color{0xff, 0xcc, 0x00, 255} // drag-target marker (prototype #ffcc00)
+TP_LIVE    :: rl.Color{0xe0, 0x8a, 0x3c, 255} // the key the brush is drawing into
 
 timeline_panel_width :: proc(t: ^Timeline) -> i32 {
 	return TP_FRAMENUM_W + i32(len(t.layers)) * TP_CELL_W
@@ -35,6 +37,14 @@ timeline_panel_frame_at :: proc(app: ^App, y: i32) -> int {
 	frame := app.panel_top + int(y-TP_HEADER_H) / TP_CELL_H
 	if frame < 1 || frame > app.timeline.frame_count do return 0
 	return frame
+}
+
+// Map a screen X to a layer index; -1 when not over a layer column.
+timeline_panel_layer_at :: proc(app: ^App, x: i32) -> int {
+	x0 := rl.GetScreenWidth() - timeline_panel_width(&app.timeline)
+	idx := int(x - (x0 + TP_FRAMENUM_W)) / TP_CELL_W
+	if idx < 0 || idx >= len(app.timeline.layers) do return -1
+	return idx
 }
 
 timeline_panel_draw :: proc(app: ^App) {
@@ -77,12 +87,30 @@ timeline_panel_draw :: proc(app: ^App) {
 			l := &t.layers[i]
 			cx := x + TP_CELL_W/2
 			cy := y + TP_CELL_H/2
-			if layer_key_exact(l, frame) != nil {
+			is_src := app.dragging && i == app.drag_layer && frame == app.drag_from
+			is_dst := app.dragging && i == app.drag_layer && frame == app.drag_target &&
+				frame != app.drag_from
+			switch {
+			case is_dst:
+				// Drag target: amber cell + hollow marker (prototype #ffcc00).
+				rl.DrawRectangle(x, y, TP_CELL_W, TP_CELL_H, rl.ColorAlpha(TP_DRAG, 0.35))
+				rl.DrawCircleLines(cx, cy, 5, TP_DRAG)
+			case is_src:
+				// The key being dragged ghosts out.
+				rl.DrawCircle(cx, cy, 5, rl.ColorAlpha(TP_KEY, 0.3))
+			case layer_key_exact(l, frame) != nil:
 				rl.DrawCircle(cx, cy, 5, TP_KEY)
-			} else if layer_key_at(l, frame) != nil {
+			case layer_key_at(l, frame) != nil:
 				rl.DrawLine(cx, y+2, cx, y+TP_CELL_H-2, TP_HOLD)
-			} else {
+			case:
 				rl.DrawCircle(cx, cy, 2, TP_EMPTY)
+			}
+			// Ring the key the brush is drawing into (the held key on the
+			// active layer at the current frame), so it's always visible.
+			if i == t.active_layer && frame == t.current_frame {
+				if k := layer_key_at(l, frame); k != nil {
+					rl.DrawCircleLines(cx, cy, 8, TP_LIVE)
+				}
 			}
 			rl.DrawLine(x+TP_CELL_W, y, x+TP_CELL_W, y+TP_CELL_H, TP_GRID)
 			x += TP_CELL_W

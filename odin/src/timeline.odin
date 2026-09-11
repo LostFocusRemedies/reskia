@@ -1,6 +1,8 @@
 package reskia
 
 import rl "vendor:raylib"
+import "core:fmt"
+import "core:strings"
 
 // Data model: Project -> Shot -> Layer -> Keyframe (holds until the next one).
 //
@@ -38,7 +40,9 @@ Timeline :: struct {
 }
 
 timeline_init :: proc(t: ^Timeline) {
-	layer := Layer{name = "bg", visible = true}
+	// Clone the name so every layer owns its name (added layers clone too),
+	// letting timeline_shutdown/delete free names uniformly.
+	layer := Layer{name = strings.clone("bg"), visible = true}
 	// Prototype: a new layer starts with a blank key at frame 1.
 	append(&layer.keyframes, Keyframe{frame = 1})
 	append(&t.layers, layer)
@@ -51,12 +55,41 @@ timeline_shutdown :: proc(t: ^Timeline) {
 	for &l in t.layers {
 		for &k in l.keyframes do keyframe_release(&k)
 		delete(l.keyframes)
+		delete(l.name)
 	}
 	delete(t.layers)
 }
 
 timeline_step_frame :: proc(t: ^Timeline, delta: int) {
 	t.current_frame = clamp(t.current_frame + delta, 1, t.frame_count)
+}
+
+// Step to the next/previous keyframe of the active layer (prototype: ,/.).
+// Forward: the first key strictly after the current frame. Backward: when
+// sitting exactly on a key, the key before it; when in a hold, the held key.
+// No-op at either end (the prototype clamps by staying put).
+timeline_step_keyframe :: proc(t: ^Timeline, delta: int) {
+	if len(t.layers) == 0 do return
+	l := &t.layers[t.active_layer]
+	target := t.current_frame
+	if delta > 0 {
+		if k := layer_next_key(l, t.current_frame); k != nil {
+			target = k.frame
+		}
+	} else if delta < 0 {
+		if k := layer_key_at(l, t.current_frame); k != nil {
+			if k.frame == t.current_frame {
+				// On a key: step to the one strictly before it.
+				if p := layer_prev_key(l, t.current_frame); p != nil {
+					target = p.frame
+				}
+			} else {
+				// In a hold: snap back to the held key.
+				target = k.frame
+			}
+		}
+	}
+	t.current_frame = clamp(target, 1, t.frame_count)
 }
 
 // --- keyframes -------------------------------------------------------------
@@ -134,6 +167,86 @@ layer_insert_keyframe :: proc(l: ^Layer, frame: int, duplicate: bool) -> ^Keyfra
 	}
 	// append may have reallocated; look the key up again.
 	return layer_key_exact(l, frame)
+}
+
+layer_delete_keyframe :: proc(l: ^Layer, frame: int) {
+	for kf, i in l.keyframes {
+		if kf.frame == frame {
+			keyframe_release(&l.keyframes[i])
+			ordered_remove(&l.keyframes, i)
+			return
+		}
+	}
+}
+
+// Move a keyframe to another frame (prototype Layer.move_keyframe): when the
+// target frame has its own key, the two swap frames; otherwise the source
+// just retargets. Pixels move with the key — no COW copy, no reallocation.
+// Returns false when there is no key at `from` or from == to.
+layer_move_keyframe :: proc(l: ^Layer, from, to: int) -> bool {
+	if from == to do return false
+	src, dst: ^Keyframe
+	for &k in l.keyframes {
+		if k.frame == from do src = &k
+		if k.frame == to do dst = &k
+	}
+	if src == nil do return false
+	src.frame = to
+	if dst != nil do dst.frame = from
+	// Re-sort; hold logic relies on frame order.
+	n := len(l.keyframes)
+	for i in 1 ..< n {
+		for j := i; j > 0 && l.keyframes[j].frame < l.keyframes[j-1].frame; j -= 1 {
+			l.keyframes[j], l.keyframes[j-1] = l.keyframes[j-1], l.keyframes[j]
+		}
+	}
+	return true
+}
+
+// --- layers ----------------------------------------------------------------
+
+// First "layer_N" name not already taken (prototype cmd_layer_add).
+layer_unique_name :: proc(t: ^Timeline, buf: []u8) -> string {
+	n := len(t.layers) + 1
+	for {
+		name := fmt.bprintf(buf, "layer_%d", n)
+		exists := false
+		for l in t.layers {
+			if l.name == name {
+				exists = true
+				break
+			}
+		}
+		if !exists do return name
+		n += 1
+	}
+}
+
+// Add a layer above `index` with a blank key at frame 1 (the prototype's
+// layer.add). Returns the new layer's index.
+timeline_add_layer :: proc(t: ^Timeline, index: int, name: string) -> int {
+	l := Layer{name = strings.clone(name), visible = true}
+	append(&l.keyframes, Keyframe{frame = 1})
+	inject_at(&t.layers, index, l)
+	return index
+}
+
+// Remove a layer, releasing its keyframes' pixels (prototype refuses to
+// delete the last layer; the caller enforces that).
+timeline_delete_layer :: proc(t: ^Timeline, index: int) {
+	l := &t.layers[index]
+	for &k in l.keyframes do keyframe_release(&k)
+	delete(l.keyframes)
+	delete(l.name)
+	ordered_remove(&t.layers, index)
+}
+
+// Move a layer from `from` to `to` (reorder; render order = array order).
+timeline_move_layer :: proc(t: ^Timeline, from, to: int) {
+	if from == to do return
+	l := t.layers[from]
+	ordered_remove(&t.layers, from)
+	inject_at(&t.layers, to, l)
 }
 
 // The render texture the stroke pipeline paints into for this layer/frame.

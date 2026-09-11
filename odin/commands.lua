@@ -5,12 +5,14 @@ reskia.register("gray-random", "gr", function()
     reskia.set_gray(math.random())
 end)
 
-reskia.register("brush-fat", "bf", function()
-    reskia.set_size(32)
+reskia.register("brush-fat", "Bf", function()
+    reskia.set_tool("brush") -- use "eraser" for eraser
+    reskia.set_size(60)
 end)
 
-reskia.register("brush-fine", "bn", function()
-    reskia.set_size(2)
+reskia.register("brush-fine", "Bn", function()
+    reskia.set_tool("brush")
+    reskia.set_size(15)
 end)
 
 -- Lua can also drive core commands.

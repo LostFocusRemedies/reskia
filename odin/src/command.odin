@@ -134,8 +134,19 @@ register_core_commands :: proc(reg: ^Registry) {
 	registry_register(reg, "clear-frame",           "kc",   "Clear frame",           cmd_clear_frame)
 	registry_register(reg, "insert-keyframe",       "ki",   "Insert keyframe (dup)", cmd_insert_keyframe)
 	registry_register(reg, "insert-blank-keyframe", "kk",   "Insert blank keyframe", cmd_insert_blank_keyframe)
+	registry_register(reg, "delete-keyframe",       "kd",   "Delete keyframe",       cmd_delete_keyframe)
 	registry_register(reg, "frame-prev",            "A-,",  "Previous frame",        cmd_frame_prev)
 	registry_register(reg, "frame-next",            "A-.",  "Next frame",            cmd_frame_next)
+	registry_register(reg, "keyframe-prev",         ",",    "Previous keyframe",     cmd_keyframe_prev)
+	registry_register(reg, "keyframe-next",         ".",    "Next keyframe",         cmd_keyframe_next)
+
+	// Layer operations (prototype: l-sequences, vim-style j=down k=up).
+	// Layer switching itself happens by clicking a panel column.
+	registry_register(reg, "layer-add",             "ln",   "New layer",             cmd_layer_add)
+	registry_register(reg, "layer-delete",          "lx",   "Delete layer",          cmd_layer_delete)
+	registry_register(reg, "layer-up",              "lk",   "Layer up",              cmd_layer_up)
+	registry_register(reg, "layer-down",            "lj",   "Layer down",            cmd_layer_down)
+	registry_register(reg, "layer-visibility",      "lv",   "Toggle visibility",     cmd_layer_visibility)
 
 	// Grayscale values, c1 = 10% ... c9 = 90%, c0 = black.
 	for i in 0..=9 {
@@ -156,6 +167,8 @@ register_core_commands :: proc(reg: ^Registry) {
 	registry_register(reg, "tool-swap",     "X",  "Swap tool",     cmd_tool_swap)
 	registry_register(reg, "toggle-timeline", "N", "Toggle timeline", cmd_toggle_timeline)
 	registry_register(reg, "toggle-onion",    "P", "Toggle onion skin", cmd_toggle_onion)
+	registry_register(reg, "undo",            "U", "Undo", cmd_undo)
+	registry_register(reg, "redo",            "R", "Redo", cmd_redo)
 }
 
 cmd_brush  :: proc(app: ^App, arg: f32) { app.brush.eraser = false }
@@ -194,6 +207,9 @@ cmd_tool_swap :: proc(app: ^App, arg: f32) { app.brush.eraser = !app.brush.erase
 cmd_clear_frame :: proc(app: ^App, arg: f32) {
 	l := &app.timeline.layers[app.timeline.active_layer]
 	rt := layer_paint_target(l, app.timeline.current_frame, app.canvas.w, app.canvas.h)
+	if k := layer_key_at(l, app.timeline.current_frame); k != nil {
+		undo_push(app, app.timeline.active_layer, k.frame, rt)
+	}
 	canvas_clear_rt(&rt)
 }
 
@@ -209,5 +225,89 @@ cmd_insert_blank_keyframe :: proc(app: ^App, arg: f32) {
 	layer_insert_keyframe(l, app.timeline.current_frame, duplicate = false)
 }
 
-cmd_frame_prev :: proc(app: ^App, arg: f32) { timeline_step_frame(&app.timeline, -1) }
-cmd_frame_next :: proc(app: ^App, arg: f32) { timeline_step_frame(&app.timeline, +1) }
+// "k d" : delete current keyframe
+cmd_delete_keyframe :: proc(app: ^App, arg: f32) {
+	l := &app.timeline.layers[app.timeline.active_layer]
+	layer_delete_keyframe(l, app.timeline.current_frame)
+}
+
+
+
+cmd_frame_prev :: proc(app: ^App, arg: f32) {
+	timeline_step_frame(&app.timeline, -1)
+	undo_clear_all(app)
+}
+cmd_frame_next :: proc(app: ^App, arg: f32) {
+	timeline_step_frame(&app.timeline, +1)
+	undo_clear_all(app)
+}
+
+cmd_keyframe_prev :: proc(app: ^App, arg: f32) {
+	timeline_step_keyframe(&app.timeline, -1)
+	undo_clear_all(app)
+}
+cmd_keyframe_next :: proc(app: ^App, arg: f32) {
+	timeline_step_keyframe(&app.timeline, +1)
+	undo_clear_all(app)
+}
+
+// --- layers (prototype cmd_layer_*; switching active layer is a panel click)
+
+cmd_layer_add :: proc(app: ^App, arg: f32) {
+	t := &app.timeline
+	buf: [32]u8
+	name := layer_unique_name(t, buf[:])
+	idx := t.active_layer + 1
+	timeline_add_layer(t, idx, name)
+	t.active_layer = idx
+	undo_clear_all(app) // undo entries address layers by index; the shift invalidates them
+	app.message = fmt.tprintf("Added: %s", t.layers[idx].name)
+}
+
+cmd_layer_delete :: proc(app: ^App, arg: f32) {
+	t := &app.timeline
+	if len(t.layers) <= 1 {
+		app.message = "Can't delete last layer"
+		return
+	}
+	name := t.layers[t.active_layer].name
+	app.message = fmt.tprintf("Deleted: %s", name)
+	timeline_delete_layer(t, t.active_layer)
+	if t.active_layer >= len(t.layers) {
+		t.active_layer = len(t.layers) - 1
+	}
+	undo_clear_all(app)
+}
+
+cmd_layer_up :: proc(app: ^App, arg: f32) {
+	t := &app.timeline
+	idx := t.active_layer
+	if idx >= len(t.layers) - 1 {
+		app.message = "Already at top"
+		return
+	}
+	timeline_move_layer(t, idx, idx + 1)
+	t.active_layer = idx + 1
+	undo_clear_all(app)
+	app.message = "Layer moved up"
+}
+
+cmd_layer_down :: proc(app: ^App, arg: f32) {
+	t := &app.timeline
+	idx := t.active_layer
+	if idx <= 0 {
+		app.message = "Already at bottom"
+		return
+	}
+	timeline_move_layer(t, idx, idx - 1)
+	t.active_layer = idx - 1
+	undo_clear_all(app)
+	app.message = "Layer moved down"
+}
+
+cmd_layer_visibility :: proc(app: ^App, arg: f32) {
+	l := &app.timeline.layers[app.timeline.active_layer]
+	l.visible = !l.visible
+	state := l.visible ? "visible" : "hidden"
+	app.message = fmt.tprintf("%s: %s", l.name, state)
+}

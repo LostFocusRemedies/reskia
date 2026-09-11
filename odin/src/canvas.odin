@@ -80,45 +80,26 @@ draw_rt :: proc(tex: rl.Texture2D, tint: rl.Color) {
 // Onion skin: the active layer's neighboring keys, drawn under the frame.
 // Counts and opacities match the prototype's defaults (2 back at 30%,
 // 1 ahead at 20%, fading per step).
-ONION_BEFORE    :: 2
+ONION_BEFORE    :: 1
 ONION_AFTER     :: 1
 ONION_OP_BEFORE :: 0.3
 ONION_OP_AFTER  :: 0.2
 ONION_TINT_BEFORE :: rl.Color{0xff, 0x6b, 0x6b, 255} // red-ish, prototype palette
 ONION_TINT_AFTER  :: rl.Color{0x6b, 0xcb, 0x77, 255} // green-ish
 
-// Composite the frame: white paper (like the prototype's canvas, so
-// translucent paint reads as gray on white, not on the dark window),
-// onion skin, then visible layers bottom-up, each contributing the image
-// of its key held at the current frame.
+// Composite the frame, matching the prototype's paintEvent order: white
+// paper, onion skin (active layer's neighbors), layers BELOW the active
+// one, then the active layer and everything above it. The onion sits just
+// under the active layer so lower layers never bury it.
 canvas_draw :: proc(app: ^App) {
 	c := &app.canvas
 	t := &app.timeline
 	rl.DrawRectangle(0, 0, c.w, c.h, rl.WHITE)
 
-	if app.onion {
-		l := &t.layers[t.active_layer]
-		k := layer_prev_key(l, t.current_frame)
-		for i in 0 ..< ONION_BEFORE {
-			if k == nil do break
-			if k.pixels != nil && k.pixels.loaded {
-				op := ONION_OP_BEFORE * (1 - f32(i) / ONION_BEFORE)
-				draw_rt(k.pixels.rt.texture, rl.ColorAlpha(ONION_TINT_BEFORE, op))
-			}
-			k = layer_prev_key(l, k.frame)
+	for &l, i in t.layers {
+		if i == t.active_layer && app.onion {
+			draw_onion(app, &l)
 		}
-		k = layer_next_key(l, t.current_frame)
-		for i in 0 ..< ONION_AFTER {
-			if k == nil do break
-			if k.pixels != nil && k.pixels.loaded {
-				op := ONION_OP_AFTER * (1 - f32(i) / ONION_AFTER)
-				draw_rt(k.pixels.rt.texture, rl.ColorAlpha(ONION_TINT_AFTER, op))
-			}
-			k = layer_next_key(l, k.frame)
-		}
-	}
-
-	for &l in t.layers {
 		if !l.visible do continue
 		k := layer_key_at(&l, t.current_frame)
 		if k != nil && k.pixels != nil && k.pixels.loaded {
@@ -126,4 +107,29 @@ canvas_draw :: proc(app: ^App) {
 		}
 	}
 	rl.DrawRectangleLines(0, 0, c.w, c.h, {255, 255, 255, 40})
+}
+
+// Onion skin: the active layer's neighboring keys. Counts and opacities
+// match the prototype's defaults (2 back at 30%, 1 ahead at 20%, fading
+// per step).
+draw_onion :: proc(app: ^App, l: ^Layer) {
+	t := &app.timeline
+	k := layer_prev_key(l, t.current_frame)
+	for i in 0 ..< ONION_BEFORE {
+		if k == nil do break
+		if k.pixels != nil && k.pixels.loaded {
+			op := ONION_OP_BEFORE * (1 - f32(i) / ONION_BEFORE)
+			draw_rt(k.pixels.rt.texture, rl.ColorAlpha(ONION_TINT_BEFORE, op))
+		}
+		k = layer_prev_key(l, k.frame)
+	}
+	k = layer_next_key(l, t.current_frame)
+	for i in 0 ..< ONION_AFTER {
+		if k == nil do break
+		if k.pixels != nil && k.pixels.loaded {
+			op := ONION_OP_AFTER * (1 - f32(i) / ONION_AFTER)
+			draw_rt(k.pixels.rt.texture, rl.ColorAlpha(ONION_TINT_AFTER, op))
+		}
+		k = layer_next_key(l, k.frame)
+	}
 }

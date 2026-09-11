@@ -90,6 +90,11 @@ handle_input :: proc(app: ^App) {
 		} else if !over_panel {
 			l := &app.timeline.layers[app.timeline.active_layer]
 			target := layer_paint_target(l, app.timeline.current_frame, app.canvas.w, app.canvas.h)
+			// Snapshot the pre-stroke state for undo (the key exists and is
+			// detached by layer_paint_target, so `target` holds it).
+			if k := layer_key_at(l, app.timeline.current_frame); k != nil {
+				undo_push(app, app.timeline.active_layer, k.frame, target)
+			}
 			canvas_begin_stroke(&app.canvas, target, mouse, stroke_pressure(app), &app.brush)
 			app.drawing = true
 		}
@@ -100,9 +105,44 @@ handle_input :: proc(app: ^App) {
 			app.drawing = false
 		}
 	}
-	if over_panel && rl.IsMouseButtonPressed(.LEFT) {
-		if f := timeline_panel_frame_at(app, i32(rl.GetMousePosition().y)); f > 0 {
+	// Timeline panel interaction: click selects layer/frame; pressing on a
+	// keyframe dot starts a drag, releasing over another row moves the key
+	// there (prototype TimelinePanel mousePress/Move/Release).
+	if app.dragging {
+		pos := rl.GetMousePosition()
+		if f := timeline_panel_frame_at(app, i32(pos.y)); f > 0 {
+			app.drag_target = f
+		}
+		if rl.IsMouseButtonReleased(.LEFT) {
+			if app.drag_target != app.drag_from {
+				l := &app.timeline.layers[app.drag_layer]
+				if layer_move_keyframe(l, app.drag_from, app.drag_target) {
+					app.timeline.current_frame = app.drag_target
+					undo_clear_all(app)
+				}
+			}
+			app.dragging = false
+		}
+	} else if over_panel && rl.IsMouseButtonPressed(.LEFT) {
+		pos := rl.GetMousePosition()
+		// Clicking a layer column (in the header or a frame row) selects that
+		// layer; clicking a frame row also seeks (prototype mousePressEvent).
+		li := timeline_panel_layer_at(app, i32(pos.x))
+		f := timeline_panel_frame_at(app, i32(pos.y))
+		if li >= 0 {
+			app.timeline.active_layer = li
+			undo_clear_all(app)
+		}
+		if f > 0 {
 			app.timeline.current_frame = f
+			undo_clear_all(app)
+			// Pressing on a keyframe dot starts a drag.
+			if li >= 0 && layer_key_exact(&app.timeline.layers[li], f) != nil {
+				app.dragging = true
+				app.drag_layer = li
+				app.drag_from = f
+				app.drag_target = f
+			}
 		}
 	}
 
@@ -143,7 +183,7 @@ draw :: proc(app: ^App) {
 
 	rl.BeginMode2D(app.camera)
 	canvas_draw(app)
-	cursor_draw(app)
+	if !over_panel_now(app) do cursor_draw(app)
 	rl.EndMode2D()
 
 	// Chord buffer, bottom left. This is the whole "command mode" UI so far.
@@ -162,6 +202,9 @@ draw :: proc(app: ^App) {
 	if app.show_timeline {
 		timeline_panel_draw(app)
 	}
+	// Over the panel the brush ring makes no sense; draw a spreadsheet-style
+	// pointer last so it sits on top of everything.
+	if over_panel_now(app) do panel_cursor_draw(app)
 }
 
 // Brush ring at the pen position, sized by live pressure — same as the
@@ -173,6 +216,35 @@ cursor_draw :: proc(app: ^App) {
 	if r > thick {
 		color: rl.Color = app.brush.eraser ? {120, 120, 120, 255} : {220, 220, 220, 255}
 		rl.DrawRingLines(pos, r - thick, r, 0, 360, 48, color)
+	}
+}
+
+// Is the mouse over the timeline panel right now? (Same math as handle_input.)
+over_panel_now :: proc(app: ^App) -> bool {
+	return app.show_timeline &&
+		rl.GetMousePosition().x >= f32(rl.GetScreenWidth()-timeline_panel_width(&app.timeline))
+}
+
+// Spreadsheet-style pointer for the timeline grid: a chunky arrow with a dark
+// outline so it reads over any cell color. Screen-space, drawn last (on top).
+panel_cursor_draw :: proc(app: ^App) {
+	m := rl.GetMousePosition()
+	// Classic arrow pointing up-left, ~18px. Filled light, outlined dark.
+	p0 := rl.Vector2{m.x, m.y}
+	p1 := rl.Vector2{m.x,      m.y + 17}
+	p2 := rl.Vector2{m.x + 5,  m.y + 13}
+	p3 := rl.Vector2{m.x + 8,  m.y + 20}
+	p4 := rl.Vector2{m.x + 11, m.y + 18.5}
+	p5 := rl.Vector2{m.x + 8,  m.y + 11.5}
+	p6 := rl.Vector2{m.x + 13, m.y + 11.5}
+	pts := [7]rl.Vector2{p0, p1, p2, p3, p4, p5, p6}
+	for i in 0 ..< 7 {
+		a, b := pts[i], pts[(i+1) % 7]
+		rl.DrawLineEx(a, b, 3, {20, 20, 20, 255})
+	}
+	for i in 0 ..< 7 {
+		a, b := pts[i], pts[(i+1) % 7]
+		rl.DrawLineEx(a, b, 1, {245, 245, 245, 255})
 	}
 }
 

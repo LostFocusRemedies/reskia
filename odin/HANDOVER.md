@@ -71,7 +71,8 @@ to seek) is implemented in `timeline_panel.odin`.
 | `tablet_stub.odin`    | `#+build !windows` no-op backend                                                         |
 | `lua_api_test.odin`   | headless registry/Lua tests (no GL needed)                                               |
 | `timeline_test.odin`  | headless timeline model tests (hold, sorted insert, COW)                                 |
-| `timeline_panel.odin` | vertical timeline overlay (prototype's TimelinePanel look; toggle `N`, click to seek)    |
+| `timeline_panel.odin` | vertical timeline overlay (prototype's TimelinePanel look; toggle `N`, click to seek/select, drag keys) |
+| `undo.odin`           | per-frame undo/redo stacks (GPU texture snapshots), `undo_push`/`cmd_undo`/`cmd_redo`   |
 
 ## Hard-won gotchas (don't rediscover these)
 
@@ -109,18 +110,31 @@ to seek) is implemented in `timeline_panel.odin`.
 3. ~~Onion skin (2b).~~ Done: `P` toggles; 2 keys back (red, 30%) / 1 key
    ahead (green, 20%) with per-step fade, active layer only, constants in
    canvas.odin.
-4. Undo — NEXT. Snapshot the paint-target texture at stroke begin (and on
-   clear-frame), copy back on undo. Per-frame like the prototype (stack
-   cleared on frame navigation); depth cap ~16 to respect the Iris Xe's
-   shared memory.
+4. ~~Undo.~~ Done: `undo.odin`. Snapshot the paint-target texture at stroke
+   begin (`main.odin`) and on clear-frame, copy back on undo. Per-frame like
+   the prototype: both stacks cleared on any frame navigation (step and panel
+   click). Depth cap 16 (`UNDO_MAX`) to respect the Iris Xe's shared memory.
+   Bindings `U`/`R`. GPU-to-GPU copies only, no CPU readback.
 5. Separate eraser brush memory (prototype eraser has its own size-30
    brush; swap on tool switch).
-6. Layer commands. The MODEL supports layers (Timeline.layers, visible
-   flag, active_layer) and the panel draws one column per layer, but
-   there are no commands yet: active_layer is stuck at 0 and you can't
-   add/delete/rename/reorder/toggle visibility. Port the prototype's
-   layer commands (Command.py: layer.add/delete/up/down/rename,
-   visibility, lock).
+6. ~~Layer commands.~~ Done: model helpers in `timeline.odin`
+   (`layer_unique_name`/`timeline_add_layer`/`timeline_delete_layer`/
+   `timeline_move_layer`), commands + `l`-chords in `command.odin`
+   (`ln` add / `lx` delete / `lk` up / `lj` down / `lv` visibility).
+   Active-layer switching is a panel click (`timeline_panel_layer_at` in
+   `main.odin`: header or frame-row column selects the layer). Layer names
+   are heap-owned (init clones "bg"); `timeline_shutdown` frees them.
+   **Deferred:** rename (needs the `:` line / palette, item 8) and lock
+   (needs a `locked` field + paint gating). Undo entries address layers by
+   index, so any layer add/delete/move clears both stacks (`undo_clear_all`).
+
+   Also in: onion-skin compositing fixed to the prototype's paintEvent order
+   (white -> onion -> layers below active -> active -> above; it used to draw
+   ALL layers over the onion, hiding it). Keyframe drag & drop in the panel
+   (`layer_move_keyframe` in timeline.odin: retarget on empty frame, swap on
+   occupied; pixels travel with the key). Press a key dot to drag, release to
+   drop; amber target marker + source ghost like the prototype. Multi-select
+   deliberately NOT done (see note below).
 7. `.reskia` ZIP save/load (project.json + zlib RGBA per keyframe, see
    the format doc comment at the top of `../src/Timeline.py`). Then
    stage-2 zlib-blob-as-truth + GPU cache behind the KeyPixels API.
