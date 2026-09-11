@@ -127,15 +127,15 @@ whichkey_draw :: proc(reg: ^Registry, right: i32) {
 // ---------------------------------------------------------------------------
 
 register_core_commands :: proc(reg: ^Registry) {
-	registry_register(reg, "brush",           "b",    "Brush tool",      cmd_brush)
-	registry_register(reg, "eraser",          "e",    "Eraser tool",     cmd_eraser)
-	registry_register(reg, "size-increase",   "w",    "Increase size",   cmd_size_up)
-	registry_register(reg, "size-decrease",   "q",    "Decrease size",   cmd_size_down)
-	registry_register(reg, "clear-frame",     "kc",   "Clear frame",          cmd_clear_frame)
-	registry_register(reg, "insert-keyframe", "ki",   "Insert keyframe (dup)", cmd_insert_keyframe)
-	registry_register(reg, "insert-blank-keyframe", "kk", "Insert blank keyframe", cmd_insert_blank_keyframe)
-	registry_register(reg, "frame-prev",      "A-,",  "Previous frame",  cmd_frame_prev)
-	registry_register(reg, "frame-next",      "A-.",  "Next frame",      cmd_frame_next)
+	registry_register(reg, "brush",                 "b",    "Brush tool",            cmd_brush)
+	registry_register(reg, "eraser",                "e",    "Eraser tool",           cmd_eraser)
+	registry_register(reg, "size-increase",         "w",    "Increase size",         cmd_size_up)
+	registry_register(reg, "size-decrease",         "q",    "Decrease size",         cmd_size_down)
+	registry_register(reg, "clear-frame",           "kc",   "Clear frame",           cmd_clear_frame)
+	registry_register(reg, "insert-keyframe",       "ki",   "Insert keyframe (dup)", cmd_insert_keyframe)
+	registry_register(reg, "insert-blank-keyframe", "kk",   "Insert blank keyframe", cmd_insert_blank_keyframe)
+	registry_register(reg, "frame-prev",            "A-,",  "Previous frame",        cmd_frame_prev)
+	registry_register(reg, "frame-next",            "A-.",  "Next frame",            cmd_frame_next)
 
 	// Grayscale values, c1 = 10% ... c9 = 90%, c0 = black.
 	for i in 0..=9 {
@@ -150,12 +150,12 @@ register_core_commands :: proc(reg: ^Registry) {
 			"Set opacity", cmd_opacity, v)
 	}
 
-	registry_register(reg, "mode-normal",   "m1", "Normal mode",   cmd_mode_normal)
-	registry_register(reg, "mode-multiply", "m3", "Multiply mode", cmd_mode_multiply)
-	registry_register(reg, "mode-cycle",    "M",  "Cycle mode",    cmd_mode_cycle)
-	registry_register(reg, "toggle-accumulation", "A", "Toggle accumulation", cmd_toggle_accum)
-	registry_register(reg, "toggle-timeline", "N", "Toggle timeline", cmd_toggle_timeline)
-	registry_register(reg, "tool-swap",     "X",  "Swap tool",     cmd_tool_swap)
+	registry_register(reg, "mode-normal",         "m1", "Normal mode",         cmd_mode_normal)
+	registry_register(reg, "mode-multiply",       "m3", "Multiply mode",       cmd_mode_multiply)
+	registry_register(reg, "mode-cycle",          "M",  "Cycle mode",          cmd_mode_cycle)
+	registry_register(reg, "toggle-accumulation", "a",  "Toggle accumulation", cmd_toggle_accum)
+	registry_register(reg, "toggle-timeline",     "n",  "Toggle timeline",     cmd_toggle_timeline)
+	registry_register(reg, "tool-swap",           "x",  "Swap tool",           cmd_tool_swap)
 }
 
 cmd_brush  :: proc(app: ^App, arg: f32) { app.brush.eraser = false }

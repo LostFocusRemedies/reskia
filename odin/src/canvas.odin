@@ -6,7 +6,8 @@ import "vendor:raylib/rlgl"
 
 // The drawing surface, and the stroke pipeline that paints into it.
 // Mirrors the prototype's Brush.py: stamps spaced along each input
-// segment, with pressure interpolated per stamp.
+// segment, with pressure interpolated per stamp. Brush state, pressure
+// curves, and the stamp/blend primitives live in brush.odin.
 //
 // Three paint paths (see stroke_segment):
 //   eraser          -> straight into `target`, destination-out blend
@@ -14,8 +15,6 @@ import "vendor:raylib/rlgl"
 //   no accumulation -> stamps go to `buffer` at full alpha, then
 //                      backup + buffer composite into `target` each segment,
 //                      so paint never builds up over itself in one stroke
-
-SPACING :: 0.15 // between stamps, as a fraction of base brush size
 
 StrokePoint :: struct {
 	pos:      rl.Vector2,
@@ -152,32 +151,19 @@ composite_buffer :: proc(c: ^Canvas, b: ^Brush) {
 
 // --- stamps ----------------------------------------------------------------
 
-begin_blend :: proc(b: ^Brush) {
-	mode := rl.BlendMode.ALPHA
-	if b.eraser {
-		mode = .CUSTOM // destination-out, factors set in canvas_init
-	} else if b.mode == .Multiply {
-		mode = .MULTIPLIED
-	}
-	rl.BeginBlendMode(mode)
-}
-
-stamp_circle :: proc(pos: rl.Vector2, pressure: f32, b: ^Brush) {
-	r := brush_size_at(b, pressure) / 2
-	alpha := b.eraser || b.accumulation ? brush_opacity_at(b, pressure) : 1
-	color := rl.ColorAlpha(b.color, alpha)
-	// A soft edge keeps dense stamp sequences from banding.
-	rl.DrawCircleGradient(i32(pos.x), i32(pos.y), r, color, rl.ColorAlpha(b.color, 0))
-}
+// (stamp_circle and begin_blend moved to brush.odin)
 
 // RenderTextures are stored flipped in Y — drawing one needs negative height.
 draw_rt :: proc(tex: rl.Texture2D, tint: rl.Color) {
 	rl.DrawTextureRec(tex, {0, 0, f32(tex.width), -f32(tex.height)}, {0, 0}, tint)
 }
 
-// Composite the frame: visible layers bottom-up, each contributing the
-// image of its key held at the current frame.
+// Composite the frame: white paper (like the prototype's canvas, so
+// translucent paint reads as gray on white, not on the dark window),
+// then visible layers bottom-up, each contributing the image of its key
+// held at the current frame.
 canvas_draw :: proc(c: Canvas, t: ^Timeline) {
+	rl.DrawRectangle(0, 0, c.w, c.h, rl.WHITE)
 	for &l in t.layers {
 		if !l.visible do continue
 		k := layer_key_at(&l, t.current_frame)

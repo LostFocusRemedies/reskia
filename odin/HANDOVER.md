@@ -53,7 +53,8 @@ to seek) is implemented in `timeline_panel.odin`.
 | File                  | Owns                                                                                     |
 | --------------------- | ---------------------------------------------------------------------------------------- |
 | `main.odin`           | window, main loop, input routing, cursor ring, status/message lines, script-path probing |
-| `app.odin`            | the one `App` struct; `Brush` + pressure mapping procs                                   |
+| `app.odin`            | the one `App` struct                                                                     |
+| `brush.odin`          | `Brush` state, pressure curves, stamp + blend primitives (the brush-feel knobs)          |
 | `command.odin`        | `Command`/`Registry`, chord engine (retry + timeout), which-key, core commands           |
 | `canvas.odin`         | render textures (target/buffer/backup), stroke pipeline, blend setup                     |
 | `timeline.odin`       | Layer/Keyframe model, `KeyPixels` (lazy alloc + COW), paint-target resolution |
