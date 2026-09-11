@@ -80,12 +80,15 @@ handle_input :: proc(app: ^App) {
 		app.camera.target = m + (app.camera.target - m) / f
 	}
 
-	// Drawing.
+	// Drawing. The timeline panel eats clicks: no stroke starts over it,
+	// and a click there seeks instead.
 	mouse := rl.GetScreenToWorld2D(rl.GetMousePosition(), app.camera)
+	over_panel := app.show_timeline &&
+		rl.GetMousePosition().x >= f32(rl.GetScreenWidth()-timeline_panel_width(&app.timeline))
 	if rl.IsMouseButtonDown(.LEFT) {
 		if app.drawing {
 			canvas_stroke_to(&app.canvas, mouse, stroke_pressure(app), &app.brush)
-		} else {
+		} else if !over_panel {
 			l := &app.timeline.layers[app.timeline.active_layer]
 			target := layer_paint_target(l, app.timeline.current_frame, app.canvas.w, app.canvas.h)
 			canvas_begin_stroke(&app.canvas, target, mouse, stroke_pressure(app), &app.brush)
@@ -94,6 +97,11 @@ handle_input :: proc(app: ^App) {
 	} else if app.drawing {
 		canvas_end_stroke(&app.canvas)
 		app.drawing = false
+	}
+	if over_panel && rl.IsMouseButtonPressed(.LEFT) {
+		if f := timeline_panel_frame_at(app, i32(rl.GetMousePosition().y)); f > 0 {
+			app.timeline.current_frame = f
+		}
 	}
 
 	// Special (non-character) keys first, then character chords.
@@ -129,10 +137,15 @@ draw :: proc(app: ^App) {
 		rl.DrawText(fmt.ctprintf("%s", app.registry.buffer), 8, rl.GetScreenHeight() - 24, 20, rl.RAYWHITE)
 	}
 
-	whichkey_draw(&app.registry)
+	which_key_right := rl.GetScreenWidth()
+	if app.show_timeline do which_key_right -= timeline_panel_width(&app.timeline)
+	whichkey_draw(&app.registry, which_key_right)
 	status_draw(app)
 	if app.message != "" {
 		rl.DrawText(fmt.ctprintf("%s", app.message), 8, rl.GetScreenHeight() - 24, 20, {255, 200, 80, 255})
+	}
+	if app.show_timeline {
+		timeline_panel_draw(app)
 	}
 }
 

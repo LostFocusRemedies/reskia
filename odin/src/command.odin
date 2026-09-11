@@ -105,14 +105,16 @@ registry_handle_char :: proc(reg: ^Registry, app: ^App, r: rune) {
 }
 
 // Which-key: every command whose binding extends the current buffer.
-whichkey_draw :: proc(reg: ^Registry) {
+// `right` is the x of the right edge available to it (left of the
+// timeline panel when that's visible).
+whichkey_draw :: proc(reg: ^Registry, right: i32) {
 	if len(reg.buffer) == 0 do return
 	buf := string(reg.buffer[:])
 
 	y := rl.GetScreenHeight() - 64
 	for cmd in reg.commands {
 		if len(cmd.keys) > len(buf) && strings.has_prefix(cmd.keys, buf) {
-			x := rl.GetScreenWidth() - 220
+			x := right - 220
 			rl.DrawRectangle(x - 8, y - 2, 220, 22, {0, 0, 0, 180})
 			rl.DrawText(fmt.ctprintf("%s  %s", cmd.keys, cmd.name), x, y, 18, rl.RAYWHITE)
 			y -= 24
@@ -152,6 +154,7 @@ register_core_commands :: proc(reg: ^Registry) {
 	registry_register(reg, "mode-multiply", "m3", "Multiply mode", cmd_mode_multiply)
 	registry_register(reg, "mode-cycle",    "M",  "Cycle mode",    cmd_mode_cycle)
 	registry_register(reg, "toggle-accumulation", "A", "Toggle accumulation", cmd_toggle_accum)
+	registry_register(reg, "toggle-timeline", "N", "Toggle timeline", cmd_toggle_timeline)
 	registry_register(reg, "tool-swap",     "X",  "Swap tool",     cmd_tool_swap)
 }
 
@@ -178,6 +181,10 @@ cmd_mode_cycle :: proc(app: ^App, arg: f32) {
 
 cmd_toggle_accum :: proc(app: ^App, arg: f32) {
 	app.brush.accumulation = !app.brush.accumulation
+}
+
+cmd_toggle_timeline :: proc(app: ^App, arg: f32) {
+	app.show_timeline = !app.show_timeline
 }
 
 cmd_tool_swap :: proc(app: ^App, arg: f32) { app.brush.eraser = !app.brush.eraser }

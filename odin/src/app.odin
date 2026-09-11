@@ -13,6 +13,8 @@ App :: struct {
 	L:        ^lua.State,
 	drawing:  bool,
 	message:  string, // transient status feedback, like the prototype's last_result
+	show_timeline: bool,
+	panel_top:     int, // first visible frame row in the timeline panel (1-based)
 }
 
 BrushMode :: enum {
@@ -58,6 +60,8 @@ app_init :: proc(canvas_w, canvas_h: i32) -> App {
 			pressure_affects_opacity = 0,
 		},
 		camera = {zoom = 0.5},
+		show_timeline = true,
+		panel_top = 1,
 	}
 	timeline_init(&app.timeline)
 	register_core_commands(&app.registry)

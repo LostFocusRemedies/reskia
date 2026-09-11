@@ -45,7 +45,8 @@ Per-keyframe canvases (roadmap 2a) are in: `Keyframe` owns a `^KeyPixels`
 (lazy texture alloc, copy-on-write sharing for duplicate keys), strokes
 paint into `layer_paint_target`. Layer compositing at draw time is basic
 (visible layers bottom-up); onion skin and stage-2 zlib-blob caching are
-not yet. Awaiting user run-validation of the new per-keyframe behavior.
+not yet. The vertical timeline panel (prototype look, toggle `N`, click
+to seek) is implemented in `timeline_panel.odin`.
 
 ## File map (`odin/src/`)
 
@@ -61,6 +62,7 @@ not yet. Awaiting user run-validation of the new per-keyframe behavior.
 | `tablet_stub.odin`    | `#+build !windows` no-op backend                                                         |
 | `lua_api_test.odin`   | headless registry/Lua tests (no GL needed)                                               |
 | `timeline_test.odin`  | headless timeline model tests (hold, sorted insert, COW)                                 |
+| `timeline_panel.odin` | vertical timeline overlay (prototype's TimelinePanel look; toggle `N`, click to seek)    |
 
 ## Hard-won gotchas (don't rediscover these)
 
