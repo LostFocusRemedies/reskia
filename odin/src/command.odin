@@ -154,6 +154,8 @@ register_core_commands :: proc(reg: ^Registry) {
 	registry_register(reg, "mode-multiply", "m3", "Multiply mode", cmd_mode_multiply)
 	registry_register(reg, "mode-cycle",    "M",  "Cycle mode",    cmd_mode_cycle)
 	registry_register(reg, "tool-swap",     "X",  "Swap tool",     cmd_tool_swap)
+	registry_register(reg, "toggle-timeline", "N", "Toggle timeline", cmd_toggle_timeline)
+	registry_register(reg, "toggle-onion",    "P", "Toggle onion skin", cmd_toggle_onion)
 }
 
 cmd_brush  :: proc(app: ^App, arg: f32) { app.brush.eraser = false }
@@ -179,6 +181,10 @@ cmd_mode_cycle :: proc(app: ^App, arg: f32) {
 
 cmd_toggle_timeline :: proc(app: ^App, arg: f32) {
 	app.show_timeline = !app.show_timeline
+}
+
+cmd_toggle_onion :: proc(app: ^App, arg: f32) {
+	app.onion = !app.onion
 }
 
 cmd_tool_swap :: proc(app: ^App, arg: f32) { app.brush.eraser = !app.brush.eraser }

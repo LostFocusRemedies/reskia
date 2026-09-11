@@ -142,7 +142,7 @@ draw :: proc(app: ^App) {
 	rl.ClearBackground({30, 30, 30, 255})
 
 	rl.BeginMode2D(app.camera)
-	canvas_draw(app.canvas, &app.timeline)
+	canvas_draw(app)
 	cursor_draw(app)
 	rl.EndMode2D()
 
@@ -181,12 +181,13 @@ status_draw :: proc(app: ^App) {
 	gray := int(app.brush.color.r) * 100 / 255
 	press := int(cursor_pressure() * 100)
 	mode: cstring = app.brush.mode == .Multiply ? " multiply" : ""
+	onion: cstring = app.onion ? " onion" : ""
 	rl.DrawText(
-		fmt.ctprintf("%s  size:%d  gray:%d%%  press:%d%%  frame:%d/%d  keys:%d%s",
+		fmt.ctprintf("%s  size:%d  gray:%d%%  press:%d%%  frame:%d/%d  keys:%d%s%s",
 			tool, int(app.brush.size), gray, press,
 			app.timeline.current_frame, app.timeline.frame_count,
 			len(app.timeline.layers[app.timeline.active_layer].keyframes),
-			mode),
+			mode, onion),
 		8, 8, 20, rl.RAYWHITE,
 	)
 }

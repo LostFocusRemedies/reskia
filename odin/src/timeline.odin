@@ -93,6 +93,24 @@ layer_key_exact :: proc(l: ^Layer, frame: int) -> ^Keyframe {
 	return nil
 }
 
+// Neighboring keys for onion skin: the last key strictly before `frame`,
+// or the first key strictly after.
+layer_prev_key :: proc(l: ^Layer, frame: int) -> ^Keyframe {
+	result: ^Keyframe
+	for &k in l.keyframes {
+		if k.frame >= frame do break
+		result = &k
+	}
+	return result
+}
+
+layer_next_key :: proc(l: ^Layer, frame: int) -> ^Keyframe {
+	for &k in l.keyframes {
+		if k.frame > frame do return &k
+	}
+	return nil
+}
+
 // Insert a key at `frame` (no-op if one exists there).
 // duplicate=true shares the held key's image (COW: first stroke on either
 // key pays the copy) — the prototype's F6. duplicate=false is a blank key

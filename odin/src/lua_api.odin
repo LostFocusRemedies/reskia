@@ -35,6 +35,7 @@ lua_open :: proc(app: ^App) {
 	lua.newtable(L)
 	set_fn(L, "register", lua_register)
 	set_fn(L, "exec",     lua_exec)
+	set_fn(L, "set_tool", lua_set_tool)
 	set_fn(L, "set_size", lua_set_size)
 	set_fn(L, "set_gray", lua_set_gray)
 	set_fn(L, "frame",    lua_frame)
@@ -100,6 +101,12 @@ lua_exec :: proc "c" (L: ^lua.State) -> i32 {
 	context = g_context
 	name := lua.L_checkstring(L, 1)
 	registry_exec(&g_app.registry, g_app, string(name))
+	return 0
+}
+
+lua_set_tool :: proc "c" (L: ^lua.State) -> i32 {
+	tool := lua.L_checkstring(L, 1)
+	g_app.brush.eraser = (tool == "eraser")
 	return 0
 }
 

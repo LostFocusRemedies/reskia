@@ -14,6 +14,7 @@ App :: struct {
 	drawing:       bool,
 	message:       string, // transient status feedback, like the prototype's last_result
 	show_timeline: bool,
+	onion:         bool, // onion skin toggle (prototype default: off)
 	panel_top:     int, // first visible frame row in the timeline panel (1-based)
 }
 

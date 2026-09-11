@@ -22,8 +22,8 @@ package, small files, no build system, no frameworks, no hidden machinery.
   (`odin/build.bat` copies it from the Odin install automatically).
 - **WinTab** for pressure (same as the prototype), NOT Windows Ink. User's
   tablet/driver works with WinTab; Ink requires "Use Windows Ink" enabled in
-  the Wacom settings, which artists often keep off. Ink is noted as a simpler
-  future backend (~60% less code) if ever needed.
+  the Wacom settings, which artists often keep off. Ink was considered as a
+  simpler future backend and explicitly rejected (WinTab works).
 - Future storage: `core:archive/zip` + `core:compress/zlib` (`.reskia` = ZIP).
 - Lua is **orchestration only**: registers into the same command registry as
   the keyboard (gets chords + which-key for free). Brush/compositing hot path
@@ -102,19 +102,42 @@ to seek) is implemented in `timeline_panel.odin`.
 10. In `registry_handle_char`, both fixes matter: retry-after-dead-end AND the
     timeout — removing either breaks chords that share prefixes.
 
-## Roadmap (roughly in priority order)
+## Roadmap (in the user's chosen order)
 
-1. ~~Merge the failing test, commit current work.~~ Done (also fixed the
-   wrong assertion: `q` shrinks size multiplicatively, `/1.1`).
-2. ~~Per-keyframe canvases~~ (2a done: lazy + COW) → onion skin (2b),
-   then stage-2 zlib-blob-as-truth + GPU cache behind the same API.
-3. `.reskia` ZIP save/load (project.json + zlib RGBA per keyframe, see the
-   format doc comment at the top of `../src/Timeline.py`).
-4. Undo (render-texture snapshots, like the prototype's `save_undo_state`).
-5. Command palette / `:` line (`vendor:microui` is the candidate).
-6. Separate eraser brush memory (prototype eraser has its own size-30 brush).
-7. Optional: Windows Ink backend as an alternative to WinTab (runtime
-   fallback chain: Ink → WinTab → mouse).
+1. ~~Merge the failing test, commit.~~ Done.
+2. ~~Per-keyframe canvases (2a: lazy + COW).~~ Done.
+3. ~~Onion skin (2b).~~ Done: `P` toggles; 2 keys back (red, 30%) / 1 key
+   ahead (green, 20%) with per-step fade, active layer only, constants in
+   canvas.odin.
+4. Undo — NEXT. Snapshot the paint-target texture at stroke begin (and on
+   clear-frame), copy back on undo. Per-frame like the prototype (stack
+   cleared on frame navigation); depth cap ~16 to respect the Iris Xe's
+   shared memory.
+5. Separate eraser brush memory (prototype eraser has its own size-30
+   brush; swap on tool switch).
+6. Layer commands. The MODEL supports layers (Timeline.layers, visible
+   flag, active_layer) and the panel draws one column per layer, but
+   there are no commands yet: active_layer is stuck at 0 and you can't
+   add/delete/rename/reorder/toggle visibility. Port the prototype's
+   layer commands (Command.py: layer.add/delete/up/down/rename,
+   visibility, lock).
+7. `.reskia` ZIP save/load (project.json + zlib RGBA per keyframe, see
+   the format doc comment at the top of `../src/Timeline.py`). Then
+   stage-2 zlib-blob-as-truth + GPU cache behind the KeyPixels API.
+8. Command palette / `:` line — hand-rolled over the registry (microui
+   rejected: too framework-y for the digestibility constraint).
+
+### Future tool ideas (user's list; discuss before implementing)
+
+- Fill tool
+- Select tool
+- Edit tool
+- Sculpt tool
+
+### Explicitly rejected
+
+- Windows Ink backend: not needed, WinTab works (user call).
+- vendor:microui for the palette (see item 8).
 
 ## Working style agreements
 
