@@ -19,6 +19,8 @@ no hidden machinery. If a feature can't fit this rule, it doesn't go in.
 | `src/canvas.odin` | Drawing surface + brush stroke pipeline |
 | `src/timeline.odin` | Project -> Layer -> Keyframe data model |
 | `src/lua_api.odin` | The `reskia.*` Lua table, command dispatch into Lua |
+| `src/tablet_windows.odin` | WinTab pressure (Windows) |
+| `src/tablet_stub.odin` | No-op pressure for other platforms |
 
 Build: `build.bat` (or `odin build src -out:reskia.exe`).
 Run from this directory so `commands.lua` and `lua54.dll` are found.
@@ -36,11 +38,26 @@ Run from this directory so `commands.lua` and `lua54.dll` are found.
 2. Lua is orchestration only. The brush and compositing hot paths never
    cross the Lua boundary.
 
+## Pressure
+
+WinTab, same as the prototype (Qt's `windows:wintab` platform). Only
+pressure is read from the tablet; position comes from the cursor, so pen
+and mouse share one pipeline. A stroke snapshots at `begin` whether it is
+pen-driven, so holding the pen still mid-stroke keeps its pressure.
+
+Brush feel matches `Brush.py`: pressure drives size fully (`min + (size -
+min) * p`), opacity not at all; stamps spaced at 0.15 * size along each
+segment with per-stamp pressure interpolation; accumulation toggle (`A`);
+normal/multiply modes (`m1`/`m3`, cycle `M`); opacity `o1..o0`; eraser is
+true destination-out via a custom GL blend.
+
+If your tablet has "Use Windows Ink" enabled, pressure may not reach
+WinTab — disable it for Reskia, same rule as the prototype.
+
 ## Deliberately not here yet
 
 - Per-keyframe canvases and layer compositing (single surface for now)
 - `.reskia` ZIP storage (`core:archive/zip` + `core:compress/zlib`)
-- Tablet pressure — raylib gives mouse only. On Windows this means
-  hooking `WM_POINTER` on the native window handle; plan for it early.
 - Undo (snapshot the render texture, or tile-based later)
 - Command palette / `:` line (microui is the candidate)
+- Separate eraser brush memory (prototype keeps size 30 per tool)

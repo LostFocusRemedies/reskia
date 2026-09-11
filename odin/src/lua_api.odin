@@ -1,6 +1,7 @@
 package reskia
 
 import "core:fmt"
+import "core:strings"
 import "base:runtime"
 import lua "vendor:lua/5.4"
 
@@ -19,8 +20,14 @@ import lua "vendor:lua/5.4"
 // callbacks. There is exactly one App, so this stays simple.
 g_app: ^App
 
+// Lua callbacks are proc "c" — no Odin context. We capture the main
+// thread's context here (it has a real allocator; runtime.default_context()
+// does not, and appending to the registry needs one).
+g_context: runtime.Context
+
 lua_open :: proc(app: ^App) {
 	g_app = app
+	g_context = context
 	app.L = lua.L_newstate()
 	lua.L_openlibs(app.L)
 
@@ -42,11 +49,24 @@ lua_close :: proc(app: ^App) {
 }
 
 // Run a script file; missing file is fine, a broken script is not silent.
-lua_load_script :: proc(app: ^App, path: cstring) {
-	if lua.L_dofile(app.L, path) != 0 {
-		fmt.eprintfln("lua: %s", lua.tostring(app.L, -1))
+// On failure: sets app.message, prints to stderr, returns false.
+lua_load_script :: proc(app: ^App, path: string) -> bool {
+	cpath := strings.clone_to_cstring(path, context.temp_allocator)
+	if lua.L_dofile(app.L, cpath) != 0 {
+		app.message = fmt.tprintf("lua: %s", lua.tostring(app.L, -1))
+		fmt.eprintfln("%s", app.message)
 		lua.pop(app.L, 1)
+		return false
 	}
+	return true
+}
+
+// Same, but quiet: no stderr, no message. For probing candidate paths.
+lua_try_script :: proc(app: ^App, path: string) -> bool {
+	cpath := strings.clone_to_cstring(path, context.temp_allocator)
+	ok := lua.L_dofile(app.L, cpath) == 0
+	if !ok do lua.pop(app.L, 1)
+	return ok
 }
 
 // Call a stored Lua function reference (used by command dispatch).
@@ -66,7 +86,7 @@ set_fn :: proc(L: ^lua.State, name: cstring, f: lua.CFunction) {
 // --- reskia.* implementations ---------------------------------------------
 
 lua_register :: proc "c" (L: ^lua.State) -> i32 {
-	context = runtime.default_context()
+	context = g_context
 	name := lua.L_checkstring(L, 1)
 	keys := lua.L_checkstring(L, 2)
 	lua.L_checktype(L, 3, i32(lua.TFUNCTION))
@@ -77,7 +97,7 @@ lua_register :: proc "c" (L: ^lua.State) -> i32 {
 }
 
 lua_exec :: proc "c" (L: ^lua.State) -> i32 {
-	context = runtime.default_context()
+	context = g_context
 	name := lua.L_checkstring(L, 1)
 	registry_exec(&g_app.registry, g_app, string(name))
 	return 0
@@ -92,7 +112,7 @@ lua_set_gray :: proc "c" (L: ^lua.State) -> i32 {
 	v := clamp(f32(lua.L_checknumber(L, 1)), 0, 1)
 	g := u8(v * 255)
 	g_app.brush.color = {g, g, g, 255}
-	g_app.eraser = false
+	g_app.brush.eraser = false
 	return 0
 }
 

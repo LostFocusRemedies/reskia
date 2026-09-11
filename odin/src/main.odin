@@ -1,6 +1,8 @@
 package reskia
 
 import "core:fmt"
+import "core:os"
+import "core:path/filepath"
 import rl "vendor:raylib"
 
 SCREEN_W :: 1280
@@ -13,17 +15,55 @@ main :: proc() {
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
 
+	tablet_init(rl.GetWindowHandle())
+	defer tablet_shutdown(rl.GetWindowHandle())
+
+	// The brush ring is the cursor (prototype uses BlankCursor too).
+	rl.HideCursor()
+	defer rl.ShowCursor()
+
 	app := app_init(1920, 1080)
 	defer app_shutdown(&app)
 
 	lua_open(&app)
 	defer lua_close(&app)
-	lua_load_script(&app, "commands.lua") // optional user extensions, next to the exe
+
+	// User commands: CWD first (project-local scripts), then next to the exe.
+	before := len(app.registry.commands)
+	loaded := lua_try_script(&app, "commands.lua")
+	if !loaded {
+		if dir, err := os.get_executable_directory(context.temp_allocator); err == nil {
+			path, _ := filepath.join({dir, "commands.lua"}, context.temp_allocator)
+			loaded = lua_try_script(&app, path)
+		}
+	}
+	count := len(app.registry.commands) - before
+	if loaded {
+		app.message = fmt.tprintf("lua: %d commands loaded", count)
+	} else {
+		app.message = "lua: commands.lua not found"
+	}
+	fmt.println(app.message)
 
 	for !rl.WindowShouldClose() {
 		handle_input(&app)
 		draw(&app)
 	}
+}
+
+// The pressure used for painting. A stroke decides once (at begin) whether
+// it's pen-driven; mouse strokes always get full pressure.
+stroke_pressure :: proc(app: ^App) -> f32 {
+	if app.canvas.stroke_tablet {
+		return clamp(tablet.latest, 0.01, 1)
+	}
+	return 1
+}
+
+// Pressure shown on the cursor ring: live pen pressure when hovering,
+// full for mouse.
+cursor_pressure :: proc() -> f32 {
+	return tablet_active() ? tablet.latest : 1
 }
 
 handle_input :: proc(app: ^App) {
@@ -44,12 +84,13 @@ handle_input :: proc(app: ^App) {
 	mouse := rl.GetScreenToWorld2D(rl.GetMousePosition(), app.camera)
 	if rl.IsMouseButtonDown(.LEFT) {
 		if app.drawing {
-			canvas_stroke_to(&app.canvas, mouse, app.brush)
+			canvas_stroke_to(&app.canvas, mouse, stroke_pressure(app), &app.brush)
 		} else {
-			canvas_begin_stroke(&app.canvas, mouse, app.brush)
+			canvas_begin_stroke(&app.canvas, mouse, stroke_pressure(app), &app.brush)
 			app.drawing = true
 		}
-	} else {
+	} else if app.drawing {
+		canvas_end_stroke(&app.canvas)
 		app.drawing = false
 	}
 
@@ -74,6 +115,7 @@ draw :: proc(app: ^App) {
 
 	rl.BeginMode2D(app.camera)
 	canvas_draw(app.canvas)
+	cursor_draw(app)
 	rl.EndMode2D()
 
 	// Chord buffer, bottom left. This is the whole "command mode" UI so far.
@@ -84,16 +126,35 @@ draw :: proc(app: ^App) {
 
 	whichkey_draw(&app.registry)
 	status_draw(app)
+	if app.message != "" {
+		rl.DrawText(fmt.ctprintf("%s", app.message), 8, rl.GetScreenHeight() - 24, 20, {255, 200, 80, 255})
+	}
+}
+
+// Brush ring at the pen position, sized by live pressure — same as the
+// prototype's draw_cursor. Line thickness stays 1px at any zoom.
+cursor_draw :: proc(app: ^App) {
+	pos := rl.GetScreenToWorld2D(rl.GetMousePosition(), app.camera)
+	r := brush_size_at(&app.brush, cursor_pressure()) / 2
+	thick := 1 / app.camera.zoom
+	if r > thick {
+		color: rl.Color = app.brush.eraser ? {120, 120, 120, 255} : {220, 220, 220, 255}
+		rl.DrawRingLines(pos, r - thick, r, 0, 360, 48, color)
+	}
 }
 
 status_draw :: proc(app: ^App) {
-	tool: cstring = app.eraser ? "eraser" : "brush"
+	tool: cstring = app.brush.eraser ? "eraser" : "brush"
 	gray := int(app.brush.color.r) * 100 / 255
+	press := int(cursor_pressure() * 100)
+	accum: cstring = app.brush.accumulation ? " accum" : ""
+	mode: cstring = app.brush.mode == .Multiply ? " multiply" : ""
 	rl.DrawText(
-		fmt.ctprintf("%s  size:%d  gray:%d%%  frame:%d/%d  keys:%d",
-			tool, int(app.brush.size), gray,
+		fmt.ctprintf("%s  size:%d  gray:%d%%  press:%d%%  frame:%d/%d  keys:%d%s%s",
+			tool, int(app.brush.size), gray, press,
 			app.timeline.current_frame, app.timeline.frame_count,
-			len(app.timeline.layers[app.timeline.active_layer].keyframes)),
+			len(app.timeline.layers[app.timeline.active_layer].keyframes),
+			mode, accum),
 		8, 8, 20, rl.RAYWHITE,
 	)
 }

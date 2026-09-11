@@ -2,6 +2,7 @@ package reskia
 
 import "core:fmt"
 import "core:strings"
+import "core:time"
 import rl "vendor:raylib"
 import lua "vendor:lua/5.4"
 
@@ -17,9 +18,12 @@ Command :: struct {
 }
 
 Registry :: struct {
-	commands: [dynamic]Command,
-	buffer:   [dynamic]u8, // pending chord characters
+	commands:  [dynamic]Command,
+	buffer:    [dynamic]u8, // pending chord characters
+	last_tick: time.Tick,   // of last buffered character (chord timeout)
 }
+
+CHORD_TIMEOUT :: 1500 * time.Millisecond
 
 registry_register :: proc(reg: ^Registry, name, keys, desc: string, action: proc(app: ^App, arg: f32), arg: f32 = 0) {
 	append(&reg.commands, Command{
@@ -60,27 +64,44 @@ command_run :: proc(cmd: Command, app: ^App) {
 }
 
 // Chord handling: buffer keystrokes, fire on exact match unless a longer
-// sequence starts with the same prefix (then wait for more input).
+// sequence starts with the same prefix (then wait for more input). On a
+// dead end, drop the oldest character and retry — like vim's leader keys.
+// If the user pauses mid-chord, a pending exact match fires (timeout),
+// which keeps short chords usable when longer ones share their prefix.
 registry_handle_char :: proc(reg: ^Registry, app: ^App, r: rune) {
-	append(&reg.buffer, u8(r))
-	buf := string(reg.buffer[:])
-
-	exact, prefix := -1, false
-	for cmd, i in reg.commands {
-		if cmd.keys == buf {
-			exact = i
-		} else if len(cmd.keys) > len(buf) && strings.has_prefix(cmd.keys, buf) {
-			prefix = true
+	if len(reg.buffer) > 0 && time.tick_since(reg.last_tick) > CHORD_TIMEOUT {
+		buf := string(reg.buffer[:])
+		for cmd in reg.commands {
+			if cmd.keys == buf {
+				command_run(cmd, app)
+				break
+			}
 		}
+		clear(&reg.buffer)
 	}
 
-	if exact >= 0 && !prefix {
-		command_run(reg.commands[exact], app)
-		clear(&reg.buffer)
-	} else if exact < 0 && !prefix {
-		clear(&reg.buffer) // dead end, start over
+	append(&reg.buffer, u8(r))
+	reg.last_tick = time.tick_now()
+
+	for len(reg.buffer) > 0 {
+		buf := string(reg.buffer[:])
+		exact, prefix := -1, false
+		for cmd, i in reg.commands {
+			if cmd.keys == buf {
+				exact = i
+			} else if len(cmd.keys) > len(buf) && strings.has_prefix(cmd.keys, buf) {
+				prefix = true
+			}
+		}
+
+		if exact >= 0 && !prefix {
+			command_run(reg.commands[exact], app)
+			clear(&reg.buffer)
+			return
+		}
+		if prefix do return // ambiguous: wait for the next character
+		ordered_remove(&reg.buffer, 0) // dead end: drop oldest, retry the rest
 	}
-	// otherwise: keep waiting for the next character
 }
 
 // Which-key: every command whose binding extends the current buffer.
@@ -109,7 +130,7 @@ register_core_commands :: proc(reg: ^Registry) {
 	registry_register(reg, "size-increase",   "w",    "Increase size",   cmd_size_up)
 	registry_register(reg, "size-decrease",   "q",    "Decrease size",   cmd_size_down)
 	registry_register(reg, "clear-frame",     "kc",   "Clear frame",     cmd_clear_frame)
-	registry_register(reg, "insert-keyframe", "<F6>", "Insert keyframe", cmd_insert_keyframe)
+	registry_register(reg, "insert-keyframe", "kk",   "Insert keyframe", cmd_insert_keyframe)
 	registry_register(reg, "frame-prev",      "A-,",  "Previous frame",  cmd_frame_prev)
 	registry_register(reg, "frame-next",      "A-.",  "Next frame",      cmd_frame_next)
 
@@ -118,19 +139,47 @@ register_core_commands :: proc(reg: ^Registry) {
 		registry_register(reg, fmt.tprintf("gray-%d", i * 10), fmt.tprintf("c%d", i),
 			"Set gray level", cmd_gray, f32(i * 10) / 100)
 	}
+
+	// Opacity, o1 = 10% ... o9 = 90%, o0 = 100%.
+	for i in 0..=9 {
+		v := i == 0 ? f32(1) : f32(i) / 10
+		registry_register(reg, fmt.tprintf("opacity-%d", i * 10), fmt.tprintf("o%d", i),
+			"Set opacity", cmd_opacity, v)
+	}
+
+	registry_register(reg, "mode-normal",   "m1", "Normal mode",   cmd_mode_normal)
+	registry_register(reg, "mode-multiply", "m3", "Multiply mode", cmd_mode_multiply)
+	registry_register(reg, "mode-cycle",    "M",  "Cycle mode",    cmd_mode_cycle)
+	registry_register(reg, "toggle-accumulation", "A", "Toggle accumulation", cmd_toggle_accum)
+	registry_register(reg, "tool-swap",     "X",  "Swap tool",     cmd_tool_swap)
 }
 
-cmd_brush  :: proc(app: ^App, arg: f32) { app.eraser = false }
-cmd_eraser :: proc(app: ^App, arg: f32) { app.eraser = true }
+cmd_brush  :: proc(app: ^App, arg: f32) { app.brush.eraser = false }
+cmd_eraser :: proc(app: ^App, arg: f32) { app.brush.eraser = true }
 
-cmd_size_up   :: proc(app: ^App, arg: f32) { app.brush.size = min(app.brush.size + 1, 200) }
-cmd_size_down :: proc(app: ^App, arg: f32) { app.brush.size = max(app.brush.size - 1, 1) }
+cmd_size_up   :: proc(app: ^App, arg: f32) { app.brush.size = min(app.brush.size * 1.1, 200.0) }
+cmd_size_down :: proc(app: ^App, arg: f32) { app.brush.size = max(app.brush.size / 1.1, 1.0) }
 
 cmd_gray :: proc(app: ^App, arg: f32) {
 	g := u8(arg * 255)
 	app.brush.color = {g, g, g, 255}
-	app.eraser = false
+	app.brush.eraser = false
 }
+
+cmd_opacity :: proc(app: ^App, arg: f32) { app.brush.opacity = arg }
+
+cmd_mode_normal   :: proc(app: ^App, arg: f32) { app.brush.mode = .Normal }
+cmd_mode_multiply :: proc(app: ^App, arg: f32) { app.brush.mode = .Multiply }
+
+cmd_mode_cycle :: proc(app: ^App, arg: f32) {
+	app.brush.mode = app.brush.mode == .Normal ? .Multiply : .Normal
+}
+
+cmd_toggle_accum :: proc(app: ^App, arg: f32) {
+	app.brush.accumulation = !app.brush.accumulation
+}
+
+cmd_tool_swap :: proc(app: ^App, arg: f32) { app.brush.eraser = !app.brush.eraser }
 
 cmd_clear_frame :: proc(app: ^App, arg: f32) { canvas_clear(&app.canvas) }
 
