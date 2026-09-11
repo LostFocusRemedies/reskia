@@ -4,8 +4,11 @@ import "core:testing"
 
 // Headless check of the lua command path: script load -> registration ->
 // chord dispatch -> effect. No GL needed; brush fields are plain memory.
+// NOTE: one @(test) proc only — `odin test` parallelizes and both the
+// registry and the Lua state live in globals (g_app/g_context), so
+// separate test procs race.
 @(test)
-lua_commands_register_and_fire :: proc(t: ^testing.T) {
+lua_commands_and_chords :: proc(t: ^testing.T) {
 	app: App
 	register_core_commands(&app.registry)
 	lua_open(&app)
@@ -34,22 +37,14 @@ lua_commands_register_and_fire :: proc(t: ^testing.T) {
 	registry_handle_char(&app.registry, &app, 'r')
 	testing.expectf(t, app.brush.color != {123, 123, 123, 255},
 		"'gr' should set a random gray, got %v", app.brush.color)
-}
 
-// Chord UX: a dead end should not swallow the current character.
-@(test)
-chord_dead_end_retries_char :: proc(t: ^testing.T) {
-	app: App
-	register_core_commands(&app.registry)
-	lua_open(&app)
-	defer lua_close(&app)
-	lua_load_script(&app, "commands.lua")
-
-	// 'b' waits (prefix of bf/bn). Then 'q' should still decrease size,
-	// not be eaten by the dead end "bq".
+	// Chord UX: a dead end should not swallow the current character.
+	// 'b' waits (prefix of bf/bn). Then 'q' should still shrink the
+	// brush (size / 1.1, like the prototype's 10% steps), not be eaten
+	// by the dead end "bq".
 	app.brush.size = 10
 	registry_handle_char(&app.registry, &app, 'b')
 	registry_handle_char(&app.registry, &app, 'q')
-	testing.expectf(t, app.brush.size == 9,
-		"'q' after dead-end 'b' should decrease size to 9, got %v", app.brush.size)
+	testing.expectf(t, app.brush.size == 10.0 / 1.1,
+		"'q' after dead-end 'b' should shrink size to %v, got %v", 10.0 / 1.1, app.brush.size)
 }
