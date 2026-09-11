@@ -15,6 +15,7 @@ package reskia
 
 import "core:c"
 import "core:time"
+import rl "vendor:raylib"
 
 // NOTE: no "system:User32.lib" here. Linking user32's import library
 // pulls in CloseWindow/ShowCursor stubs that collide with raylib's own
@@ -111,6 +112,16 @@ user32_resolve :: proc() -> bool {
 	return set_window_long_ptr != nil && call_window_proc != nil
 }
 
+// A queued pen sample. Position is in screen pixels (the default WinTab
+// context maps to the virtual screen, same space as rl.GetWindowPosition);
+// pressure is normalized 0..1.
+TabletPoint :: struct {
+	pos:      rl.Vector2,
+	pressure: f32,
+}
+
+TABLET_QUEUE_LEN :: 512 // ring; oldest dropped on overflow
+
 tablet: struct {
 	dll:       rawptr,
 	ctx:       rawptr,
@@ -121,14 +132,33 @@ tablet: struct {
 	wt_packet: WTPacket_t,
 	press_min: i32,
 	press_max: i32,
+	sys_ext_y: i32, // context Y extent; WinTab pkY is bottom-up, we flip with this
 	latest:    f32, // 0..1, last packet received
 	last_tick: time.Tick, // of last packet
 	ok:        bool,
+	// Every packet is queued here at full tablet rate (~200 Hz) so strokes
+	// can paint one segment per packet instead of one per 60 Hz frame.
+	queue:     [TABLET_QUEUE_LEN]TabletPoint,
+	q_head:    int, // append here
+	q_tail:    int, // drain from here
+	drained:   [TABLET_QUEUE_LEN]TabletPoint,
 }
 
 // True when a pen has talked to us recently. A stroke snapshots this at
 // begin, so a pen held still mid-stroke keeps its last pressure instead
 // of falling back to mouse mode.
+// Drain the queued pen samples (called once per frame). The returned slice
+// is owned by the tablet backend and invalidated by the next drain.
+tablet_drain :: proc() -> []TabletPoint {
+	n := 0
+	for tablet.q_tail != tablet.q_head {
+		tablet.drained[n] = tablet.queue[tablet.q_tail]
+		tablet.q_tail = (tablet.q_tail + 1) % TABLET_QUEUE_LEN
+		n += 1
+	}
+	return tablet.drained[:n]
+}
+
 tablet_active :: proc() -> bool {
 	return tablet.ok && time.tick_since(tablet.last_tick) < 500 * time.Millisecond
 }
@@ -177,6 +207,9 @@ tablet_init :: proc(hwnd: rawptr) {
 		tablet.dll = nil
 		return
 	}
+	// pkY arrives bottom-up within the context's Y extent (Qt flips it the
+	// same way). pkX is already absolute screen X.
+	tablet.sys_ext_y = lc.lcSysExtY
 
 	// Intercept WinTab messages ahead of GLFW's window proc.
 	proc_bits := transmute(uintptr) tablet_wnd_proc
@@ -197,8 +230,14 @@ tablet_wnd_proc :: proc "system" (hwnd: rawptr, msg: c.uint, wparam: uintptr, lp
 		pkt: PACKET
 		if tablet.wt_packet(tablet.ctx, c.uint(wparam), &pkt) {
 			p := f32(pkt.pkNormalPressure - u32(tablet.press_min))
-			tablet.latest = clamp(p / f32(tablet.press_max - tablet.press_min), 0, 1)
+			pressure := clamp(p / f32(tablet.press_max - tablet.press_min), 0, 1)
+			tablet.latest = pressure
 			tablet.last_tick = time.tick_now()
+			tablet.queue[tablet.q_head] = {{f32(pkt.pkX), f32(tablet.sys_ext_y) - f32(pkt.pkY)}, pressure}
+			tablet.q_head = (tablet.q_head + 1) % TABLET_QUEUE_LEN
+			if tablet.q_head == tablet.q_tail { // full: drop the oldest
+				tablet.q_tail = (tablet.q_tail + 1) % TABLET_QUEUE_LEN
+			}
 		}
 	}
 	return call_window_proc(rawptr(uintptr(tablet.old_proc)), hwnd, msg, wparam, lparam)

@@ -11,16 +11,16 @@ no hidden machinery. If a feature can't fit this rule, it doesn't go in.
 
 ## Layout
 
-| File | Owns |
-|---|---|
-| `src/main.odin` | Window, main loop, input routing, on-screen UI |
-| `src/app.odin` | The one `App` struct all state hangs off |
-| `src/command.odin` | Command registry, chord matching, which-key |
-| `src/canvas.odin` | Drawing surface + brush stroke pipeline |
-| `src/timeline.odin` | Project -> Layer -> Keyframe data model |
-| `src/lua_api.odin` | The `reskia.*` Lua table, command dispatch into Lua |
-| `src/tablet_windows.odin` | WinTab pressure (Windows) |
-| `src/tablet_stub.odin` | No-op pressure for other platforms |
+| File                      | Owns                                                |
+| ------------------------- | --------------------------------------------------- |
+| `src/main.odin`           | Window, main loop, input routing, on-screen UI      |
+| `src/app.odin`            | The one `App` struct all state hangs off            |
+| `src/command.odin`        | Command registry, chord matching, which-key         |
+| `src/canvas.odin`         | Drawing surface + brush stroke pipeline             |
+| `src/timeline.odin`       | Project -> Layer -> Keyframe data model             |
+| `src/lua_api.odin`        | The `reskia.*` Lua table, command dispatch into Lua |
+| `src/tablet_windows.odin` | WinTab pressure (Windows)                           |
+| `src/tablet_stub.odin`    | No-op pressure for other platforms                  |
 
 Build: `build.bat` (or `odin build src -out:reskia.exe`).
 Run from this directory so `commands.lua` and `lua54.dll` are found.

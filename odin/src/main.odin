@@ -3,6 +3,7 @@ package reskia
 import "core:fmt"
 import "core:os"
 import "core:path/filepath"
+import "core:math"
 import rl "vendor:raylib"
 
 SCREEN_W :: 1280
@@ -13,7 +14,7 @@ main :: proc() {
 	rl.SetConfigFlags({.WINDOW_RESIZABLE, .MSAA_4X_HINT})
 	rl.InitWindow(SCREEN_W, SCREEN_H, "Reskia (odin)")
 	defer rl.CloseWindow()
-	rl.SetTargetFPS(60)
+	rl.SetTargetFPS(120)
 
 	tablet_init(rl.GetWindowHandle())
 	defer tablet_shutdown(rl.GetWindowHandle())
@@ -67,19 +68,6 @@ cursor_pressure :: proc() -> f32 {
 }
 
 handle_input :: proc(app: ^App) {
-	// Maya-style navigation: MMB pans, wheel zooms to cursor.
-	if rl.IsMouseButtonDown(.MIDDLE) {
-		d := rl.GetMouseDelta()
-		app.camera.target -= d / app.camera.zoom
-	}
-	if wheel := rl.GetMouseWheelMove(); wheel != 0 {
-		m := rl.GetScreenToWorld2D(rl.GetMousePosition(), app.camera)
-		f: f32 = wheel > 0 ? 1.1 : 1.0 / 1.1
-		app.camera.zoom = clamp(app.camera.zoom * f, 0.05, 16)
-		// Keep the point under the cursor stationary while zooming.
-		app.camera.target = m + (app.camera.target - m) / f
-	}
-
 	// Drawing. The timeline panel eats clicks: no stroke starts over it,
 	// and a click there seeks instead.
 	mouse := rl.GetScreenToWorld2D(rl.GetMousePosition(), app.camera)
@@ -87,16 +75,30 @@ handle_input :: proc(app: ^App) {
 		rl.GetMousePosition().x >= f32(rl.GetScreenWidth()-timeline_panel_width(&app.timeline))
 	if rl.IsMouseButtonDown(.LEFT) {
 		if app.drawing {
-			canvas_stroke_to(&app.canvas, mouse, stroke_pressure(app), &app.brush)
+			if app.canvas.stroke_tablet {
+				// Pen: one segment per queued packet (full tablet rate),
+				// not one per frame. Packet positions are in screen
+				// pixels; convert to client, then to canvas coords.
+				win := rl.GetWindowPosition()
+				for pt in tablet_drain() {
+					world := rl.GetScreenToWorld2D(pt.pos - win, app.camera)
+					canvas_stroke_to(&app.canvas, world, max(pt.pressure, 0.01), &app.brush)
+				}
+			} else {
+				canvas_stroke_to(&app.canvas, mouse, stroke_pressure(app), &app.brush)
+			}
 		} else if !over_panel {
 			l := &app.timeline.layers[app.timeline.active_layer]
 			target := layer_paint_target(l, app.timeline.current_frame, app.canvas.w, app.canvas.h)
 			canvas_begin_stroke(&app.canvas, target, mouse, stroke_pressure(app), &app.brush)
 			app.drawing = true
 		}
-	} else if app.drawing {
-		canvas_end_stroke(&app.canvas)
-		app.drawing = false
+	} else {
+		tablet_drain() // discard hover packets so they don't replay next stroke
+		if app.drawing {
+			canvas_end_stroke(&app.canvas)
+			app.drawing = false
+		}
 	}
 	if over_panel && rl.IsMouseButtonPressed(.LEFT) {
 		if f := timeline_panel_frame_at(app, i32(rl.GetMousePosition().y)); f > 0 {
@@ -112,6 +114,19 @@ handle_input :: proc(app: ^App) {
 		registry_exec(&app.registry, app, "insert-blank-keyframe")
 	}
 	if rl.IsKeyDown(.LEFT_ALT) {
+		if rl.IsMouseButtonDown(.MIDDLE) {
+			d := rl.GetMouseDelta()
+			app.camera.target -= d / app.camera.zoom
+		}
+		if rl.IsMouseButtonDown(.RIGHT) {
+			d := rl.GetMouseDelta()
+			if d.x != 0 {
+				m := rl.GetScreenToWorld2D(rl.GetMousePosition(), app.camera)
+				f := math.exp(d.x * 0.005)
+				app.camera.zoom = clamp(app.camera.zoom * f, 0.05, 16)
+				app.camera.target = m + (app.camera.target - m) / f
+			}
+		}
 		if rl.IsKeyPressed(.COMMA)  do registry_exec(&app.registry, app, "frame-prev")
 		if rl.IsKeyPressed(.PERIOD) do registry_exec(&app.registry, app, "frame-next")
 	} else {
@@ -153,7 +168,7 @@ draw :: proc(app: ^App) {
 // prototype's draw_cursor. Line thickness stays 1px at any zoom.
 cursor_draw :: proc(app: ^App) {
 	pos := rl.GetScreenToWorld2D(rl.GetMousePosition(), app.camera)
-	r := brush_size_at(&app.brush, cursor_pressure()) / 2
+	r := app.brush.size / 2
 	thick := 1 / app.camera.zoom
 	if r > thick {
 		color: rl.Color = app.brush.eraser ? {120, 120, 120, 255} : {220, 220, 220, 255}
@@ -165,14 +180,13 @@ status_draw :: proc(app: ^App) {
 	tool: cstring = app.brush.eraser ? "eraser" : "brush"
 	gray := int(app.brush.color.r) * 100 / 255
 	press := int(cursor_pressure() * 100)
-	accum: cstring = app.brush.accumulation ? " accum" : ""
 	mode: cstring = app.brush.mode == .Multiply ? " multiply" : ""
 	rl.DrawText(
-		fmt.ctprintf("%s  size:%d  gray:%d%%  press:%d%%  frame:%d/%d  keys:%d%s%s",
+		fmt.ctprintf("%s  size:%d  gray:%d%%  press:%d%%  frame:%d/%d  keys:%d%s",
 			tool, int(app.brush.size), gray, press,
 			app.timeline.current_frame, app.timeline.frame_count,
 			len(app.timeline.layers[app.timeline.active_layer].keyframes),
-			mode, accum),
+			mode),
 		8, 8, 20, rl.RAYWHITE,
 	)
 }

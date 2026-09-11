@@ -41,6 +41,14 @@ package, small files, no build system, no frameworks, no hidden machinery.
 
 Brush/pressure/Lua/chords all validated by the user. Tests green.
 
+The brush is a hard round pencil (`brush_paint` in brush.odin): a
+pressure-width line with round caps/joints per input segment, painted
+directly into the current keyframe's texture. Accumulation mode and the
+buffer/backup machinery were ditched (user call: they were a Qt quirk
+workaround); the prototype's default is line mode (`spacing = 0.0`),
+NOT stamps — the earlier gradient-stamp port was the wrong feel.
+The canvas composites over white paper like the prototype.
+
 Per-keyframe canvases (roadmap 2a) are in: `Keyframe` owns a `^KeyPixels`
 (lazy texture alloc, copy-on-write sharing for duplicate keys), strokes
 paint into `layer_paint_target`. Layer compositing at draw time is basic
@@ -54,9 +62,9 @@ to seek) is implemented in `timeline_panel.odin`.
 | --------------------- | ---------------------------------------------------------------------------------------- |
 | `main.odin`           | window, main loop, input routing, cursor ring, status/message lines, script-path probing |
 | `app.odin`            | the one `App` struct                                                                     |
-| `brush.odin`          | `Brush` state, pressure curves, stamp + blend primitives (the brush-feel knobs)          |
+| `brush.odin`          | the pencil: `Brush` state, `brush_paint` capsule primitive, blend modes                   |
 | `command.odin`        | `Command`/`Registry`, chord engine (retry + timeout), which-key, core commands           |
-| `canvas.odin`         | render textures (target/buffer/backup), stroke pipeline, blend setup                     |
+| `canvas.odin`         | stroke pipeline (capsules straight into the keyframe texture), frame compositing         |
 | `timeline.odin`       | Layer/Keyframe model, `KeyPixels` (lazy alloc + COW), paint-target resolution |
 | `lua_api.odin`        | `reskia.*` table, `g_app`/`g_context`, script load procs                                 |
 | `tablet_windows.odin` | WinTab backend (pressure only)                                                           |

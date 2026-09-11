@@ -150,12 +150,10 @@ register_core_commands :: proc(reg: ^Registry) {
 			"Set opacity", cmd_opacity, v)
 	}
 
-	registry_register(reg, "mode-normal",         "m1", "Normal mode",         cmd_mode_normal)
-	registry_register(reg, "mode-multiply",       "m3", "Multiply mode",       cmd_mode_multiply)
-	registry_register(reg, "mode-cycle",          "M",  "Cycle mode",          cmd_mode_cycle)
-	registry_register(reg, "toggle-accumulation", "a",  "Toggle accumulation", cmd_toggle_accum)
-	registry_register(reg, "toggle-timeline",     "n",  "Toggle timeline",     cmd_toggle_timeline)
-	registry_register(reg, "tool-swap",           "x",  "Swap tool",           cmd_tool_swap)
+	registry_register(reg, "mode-normal",   "m1", "Normal mode",   cmd_mode_normal)
+	registry_register(reg, "mode-multiply", "m3", "Multiply mode", cmd_mode_multiply)
+	registry_register(reg, "mode-cycle",    "M",  "Cycle mode",    cmd_mode_cycle)
+	registry_register(reg, "tool-swap",     "X",  "Swap tool",     cmd_tool_swap)
 }
 
 cmd_brush  :: proc(app: ^App, arg: f32) { app.brush.eraser = false }
@@ -177,10 +175,6 @@ cmd_mode_multiply :: proc(app: ^App, arg: f32) { app.brush.mode = .Multiply }
 
 cmd_mode_cycle :: proc(app: ^App, arg: f32) {
 	app.brush.mode = app.brush.mode == .Normal ? .Multiply : .Normal
-}
-
-cmd_toggle_accum :: proc(app: ^App, arg: f32) {
-	app.brush.accumulation = !app.brush.accumulation
 }
 
 cmd_toggle_timeline :: proc(app: ^App, arg: f32) {
