@@ -46,6 +46,11 @@ main :: proc() {
 	}
 	fmt.println(app.message)
 
+	// Project: load project.reskia (CWD, then exe dir) or start fresh.
+	// Overwrites the lua message on purpose — it matters more.
+	storage_load_or_create(&app)
+	fmt.println(app.message)
+
 	for !rl.WindowShouldClose() {
 		handle_input(&app)
 		draw(&app)
@@ -82,10 +87,10 @@ handle_input :: proc(app: ^App) {
 				win := rl.GetWindowPosition()
 				for pt in tablet_drain() {
 					world := rl.GetScreenToWorld2D(pt.pos - win, app.camera)
-					canvas_stroke_to(&app.canvas, world, max(pt.pressure, 0.01), &app.brush)
+					canvas_stroke_to(&app.canvas, world, max(pt.pressure, 0.01), active_brush(app))
 				}
 			} else {
-				canvas_stroke_to(&app.canvas, mouse, stroke_pressure(app), &app.brush)
+				canvas_stroke_to(&app.canvas, mouse, stroke_pressure(app), active_brush(app))
 			}
 		} else if !over_panel {
 			l := &app.timeline.layers[app.timeline.active_layer]
@@ -95,7 +100,7 @@ handle_input :: proc(app: ^App) {
 			if k := layer_key_at(l, app.timeline.current_frame); k != nil {
 				undo_push(app, app.timeline.active_layer, k.frame, target)
 			}
-			canvas_begin_stroke(&app.canvas, target, mouse, stroke_pressure(app), &app.brush)
+			canvas_begin_stroke(&app.canvas, target, mouse, stroke_pressure(app), active_brush(app))
 			app.drawing = true
 		}
 	} else {
@@ -211,10 +216,10 @@ draw :: proc(app: ^App) {
 // prototype's draw_cursor. Line thickness stays 1px at any zoom.
 cursor_draw :: proc(app: ^App) {
 	pos := rl.GetScreenToWorld2D(rl.GetMousePosition(), app.camera)
-	r := app.brush.size / 2
+	r := active_brush(app).size / 2
 	thick := 1 / app.camera.zoom
 	if r > thick {
-		color: rl.Color = app.brush.eraser ? {120, 120, 120, 255} : {220, 220, 220, 255}
+		color: rl.Color = app.tool == .Eraser ? {120, 120, 120, 255} : {220, 220, 220, 255}
 		rl.DrawRingLines(pos, r - thick, r, 0, 360, 48, color)
 	}
 }
@@ -249,14 +254,16 @@ panel_cursor_draw :: proc(app: ^App) {
 }
 
 status_draw :: proc(app: ^App) {
-	tool: cstring = app.brush.eraser ? "eraser" : "brush"
-	gray := int(app.brush.color.r) * 100 / 255
+	b := active_brush(app)
+	tool: cstring = app.tool == .Eraser ? "eraser" : "brush"
+	gray := int(b.color.r) * 100 / 255
 	press := int(cursor_pressure() * 100)
-	mode: cstring = app.brush.mode == .Multiply ? " multiply" : ""
+	// Mode is a pencil concept; the eraser ignores it (destination-out).
+	mode: cstring = app.tool != .Eraser && b.mode == .Multiply ? " multiply" : ""
 	onion: cstring = app.onion ? " onion" : ""
 	rl.DrawText(
 		fmt.ctprintf("%s  size:%d  gray:%d%%  press:%d%%  frame:%d/%d  keys:%d%s%s",
-			tool, int(app.brush.size), gray, press,
+			tool, int(b.size), gray, press,
 			app.timeline.current_frame, app.timeline.frame_count,
 			len(app.timeline.layers[app.timeline.active_layer].keyframes),
 			mode, onion),

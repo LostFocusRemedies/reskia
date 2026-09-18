@@ -24,14 +24,18 @@ lua_commands_and_chords :: proc(t: ^testing.T) {
 	testing.expect(t, found_gr, "gray-random should be registered with chord 'gr'")
 	testing.expect(t, found_bf, "brush-fat should be registered with chord 'Bf'")
 
-	// Type B, f -> brush-fat should set the brush tool and size 60.
+	// Type B, f -> brush-fat should switch to the pencil and size it 60.
+	// Each tool has its own brush memory, so the eraser's size is untouched.
 	app.brush.size = 10
-	app.brush.eraser = true
+	app.eraser.size = 30
+	app.tool = .Eraser
 	registry_handle_char(&app.registry, &app, 'B')
 	registry_handle_char(&app.registry, &app, 'f')
-	testing.expectf(t, app.brush.size == 60 && !app.brush.eraser,
-		"'Bf' should set the brush tool and size 60, got size %v eraser %v",
-		app.brush.size, app.brush.eraser)
+	testing.expectf(t, app.brush.size == 60 && app.tool == .Brush,
+		"'Bf' should set the brush tool and size 60, got size %v tool %v",
+		app.brush.size, app.tool)
+	testing.expectf(t, app.eraser.size == 30,
+		"'Bf' should not touch the eraser's memory, got size %v", app.eraser.size)
 
 	// Type g, r -> gray-random should change the color off its start value.
 	app.brush.color = {123, 123, 123, 255}
@@ -42,11 +46,22 @@ lua_commands_and_chords :: proc(t: ^testing.T) {
 
 	// Chord UX: a dead end should not swallow the current character.
 	// 'B' waits (prefix of Bf/Bn). Then 'q' should still shrink the
-	// brush (size / 1.1, like the prototype's 10% steps), not be eaten
-	// by the dead end "Bq".
+	// active tool's brush (size / 1.1, like the prototype's 10% steps),
+	// not be eaten by the dead end "Bq".
 	app.brush.size = 10
 	registry_handle_char(&app.registry, &app, 'B')
 	registry_handle_char(&app.registry, &app, 'q')
 	testing.expectf(t, app.brush.size == 10.0 / 1.1,
 		"'q' after dead-end 'b' should shrink size to %v, got %v", 10.0 / 1.1, app.brush.size)
+
+	// Tool switch keeps each brush's memory: shrink the eraser, swap
+	// away and back, its size is still there.
+	registry_exec(&app.registry, &app, "eraser")
+	app.eraser.size = 30
+	registry_handle_char(&app.registry, &app, 'q')
+	registry_exec(&app.registry, &app, "brush")
+	registry_exec(&app.registry, &app, "eraser")
+	expected := f32(30) / f32(1.1)
+	testing.expectf(t, app.eraser.size == expected,
+		"eraser should keep its own size across tool swaps, got %v", app.eraser.size)
 }

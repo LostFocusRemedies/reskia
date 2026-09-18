@@ -12,7 +12,8 @@ import "core:strings"
 // just a transparent hold. All pixel access funnels through
 // layer_paint_target / layer_key_at, so the planned CPU-side zlib cache
 // (stage 2: blob as truth, GPU texture as cache) slots in behind this API
-// without touching callers. Storage (.reskia = zip) comes later.
+// without touching callers. Storage (.reskia = zip) lives in storage.odin;
+// each key carries a per-layer `id` so its blob filename survives moves.
 
 KeyPixels :: struct {
 	rt:     rl.RenderTexture2D,
@@ -23,13 +24,15 @@ KeyPixels :: struct {
 
 Keyframe :: struct {
 	frame:  int, // frame where this key starts, 1-indexed
+	id:     int, // per-layer storage id ("k%04d" in the .reskia file)
 	pixels: ^KeyPixels,
 }
 
 Layer :: struct {
-	name:      string,
-	visible:   bool,
-	keyframes: [dynamic]Keyframe, // sorted by frame; hold logic relies on it
+	name:        string,
+	visible:     bool,
+	next_key_id: int, // storage ids handed out so far (prototype _next_key_id)
+	keyframes:   [dynamic]Keyframe, // sorted by frame; hold logic relies on it
 }
 
 Timeline :: struct {
@@ -44,7 +47,8 @@ timeline_init :: proc(t: ^Timeline) {
 	// letting timeline_shutdown/delete free names uniformly.
 	layer := Layer{name = strings.clone("bg"), visible = true}
 	// Prototype: a new layer starts with a blank key at frame 1.
-	append(&layer.keyframes, Keyframe{frame = 1})
+	append(&layer.keyframes, Keyframe{frame = 1, id = 1})
+	layer.next_key_id = 2
 	append(&t.layers, layer)
 	t.active_layer = 0
 	t.current_frame = 1
@@ -165,8 +169,11 @@ layer_insert_keyframe :: proc(l: ^Layer, frame: int, duplicate: bool) -> ^Keyfra
 			l.keyframes[i], l.keyframes[i - 1] = l.keyframes[i - 1], l.keyframes[i]
 		}
 	}
-	// append may have reallocated; look the key up again.
-	return layer_key_exact(l, frame)
+	// Storage id after the sort: append may have reallocated; look the key up.
+	k := layer_key_exact(l, frame)
+	k.id = l.next_key_id
+	l.next_key_id += 1
+	return k
 }
 
 layer_delete_keyframe :: proc(l: ^Layer, frame: int) {
@@ -226,7 +233,8 @@ layer_unique_name :: proc(t: ^Timeline, buf: []u8) -> string {
 // layer.add). Returns the new layer's index.
 timeline_add_layer :: proc(t: ^Timeline, index: int, name: string) -> int {
 	l := Layer{name = strings.clone(name), visible = true}
-	append(&l.keyframes, Keyframe{frame = 1})
+	append(&l.keyframes, Keyframe{frame = 1, id = 1})
+	l.next_key_id = 2
 	inject_at(&t.layers, index, l)
 	return index
 }

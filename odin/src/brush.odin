@@ -9,7 +9,9 @@ import rl "vendor:raylib"
 
 BrushMode :: enum {
 	Normal,
+	Behind,
 	Multiply,
+	Overlay
 }
 
 Brush :: struct {
@@ -22,6 +24,12 @@ Brush :: struct {
 
 brush_default :: proc() -> Brush {
 	return {size = 10, color = {0, 0, 0, 255}, opacity = 1}
+}
+
+// The eraser is its own tool with its own brush memory (prototype:
+// EraserTool keeps a separate size-30 Brush, swapped in on tool switch).
+brush_eraser_default :: proc() -> Brush {
+	return {size = 30, color = {0, 0, 0, 255}, opacity = 1, eraser = true}
 }
 
 brush_size_at :: proc(b: ^Brush, pressure: f32) -> f32 {

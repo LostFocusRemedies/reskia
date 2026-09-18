@@ -169,27 +169,37 @@ register_core_commands :: proc(reg: ^Registry) {
 	registry_register(reg, "toggle-onion",    "P", "Toggle onion skin", cmd_toggle_onion)
 	registry_register(reg, "undo",            "U", "Undo", cmd_undo)
 	registry_register(reg, "redo",            "R", "Redo", cmd_redo)
+	registry_register(reg, "save",            "s", "Save project", cmd_save)
 }
 
-cmd_brush  :: proc(app: ^App, arg: f32) { app.brush.eraser = false }
-cmd_eraser :: proc(app: ^App, arg: f32) { app.brush.eraser = true }
+cmd_brush  :: proc(app: ^App, arg: f32) { app.tool = .Brush }
+cmd_eraser :: proc(app: ^App, arg: f32) { app.tool = .Eraser }
 
-cmd_size_up   :: proc(app: ^App, arg: f32) { app.brush.size = min(app.brush.size * 1.1, 200.0) }
-cmd_size_down :: proc(app: ^App, arg: f32) { app.brush.size = max(app.brush.size / 1.1, 1.0) }
+cmd_size_up :: proc(app: ^App, arg: f32) {
+	b := active_brush(app)
+	b.size = min(b.size * 1.1, 200.0)
+}
+cmd_size_down :: proc(app: ^App, arg: f32) {
+	b := active_brush(app)
+	b.size = max(b.size / 1.1, 1.0)
+}
 
+// Picking a gray switches to the pencil (prototype: color commands are
+// brush commands; the eraser has no color).
 cmd_gray :: proc(app: ^App, arg: f32) {
 	g := u8(arg * 255)
 	app.brush.color = {g, g, g, 255}
-	app.brush.eraser = false
+	app.tool = .Brush
 }
 
-cmd_opacity :: proc(app: ^App, arg: f32) { app.brush.opacity = arg }
+cmd_opacity :: proc(app: ^App, arg: f32) { active_brush(app).opacity = arg }
 
-cmd_mode_normal   :: proc(app: ^App, arg: f32) { app.brush.mode = .Normal }
-cmd_mode_multiply :: proc(app: ^App, arg: f32) { app.brush.mode = .Multiply }
+cmd_mode_normal   :: proc(app: ^App, arg: f32) { active_brush(app).mode = .Normal }
+cmd_mode_multiply :: proc(app: ^App, arg: f32) { active_brush(app).mode = .Multiply }
 
 cmd_mode_cycle :: proc(app: ^App, arg: f32) {
-	app.brush.mode = app.brush.mode == .Normal ? .Multiply : .Normal
+	b := active_brush(app)
+	b.mode = b.mode == .Normal ? .Multiply : .Normal
 }
 
 cmd_toggle_timeline :: proc(app: ^App, arg: f32) {
@@ -200,7 +210,17 @@ cmd_toggle_onion :: proc(app: ^App, arg: f32) {
 	app.onion = !app.onion
 }
 
-cmd_tool_swap :: proc(app: ^App, arg: f32) { app.brush.eraser = !app.brush.eraser }
+cmd_save :: proc(app: ^App, arg: f32) {
+	if ok, keys := storage_save(app); ok {
+		app.message = fmt.tprintf("Saved: %s (%d keys)", app.path, keys)
+	} else {
+		app.message = fmt.tprintf("Save failed: %s", app.path)
+	}
+}
+
+cmd_tool_swap :: proc(app: ^App, arg: f32) {
+	app.tool = app.tool == .Eraser ? .Brush : .Eraser
+}
 
 // Clears the held key's image at the current frame (same paint-target
 // resolution as strokes: lazy alloc + COW, so a shared key detaches first).

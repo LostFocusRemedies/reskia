@@ -52,9 +52,19 @@ The canvas composites over white paper like the prototype.
 Per-keyframe canvases (roadmap 2a) are in: `Keyframe` owns a `^KeyPixels`
 (lazy texture alloc, copy-on-write sharing for duplicate keys), strokes
 paint into `layer_paint_target`. Layer compositing at draw time is basic
-(visible layers bottom-up); onion skin and stage-2 zlib-blob caching are
-not yet. The vertical timeline panel (prototype look, toggle `N`, click
-to seek) is implemented in `timeline_panel.odin`.
+(visible layers bottom-up); stage-2 zlib-blob caching is not yet. The
+vertical timeline panel (prototype look, toggle `N`, click to seek) is
+implemented in `timeline_panel.odin`.
+
+`.reskia` save/load (roadmap 7) is in: `storage.odin`. THIS NIGHTLY HAS
+NO `core:archive/zip` and `core:compress/zlib` is INFLATE-ONLY — the zip
+writer and the zlib writer are hand-rolled in storage.odin (stored zip
+entries, stored deflate blocks + Adler-32: no real compression, ~8 MB
+per drawn 1080p keyframe; accepted v1 tradeoff, user call). Files are
+schema-compatible with the prototype both ways: it can open our saves,
+and our reader inflates method-8 entries so we open its saves. Keyframes
+carry a per-layer storage `id` ("k%04d"); COW-shared pixels are
+flattened on save (written per key, user call: easy programming).
 
 ## File map (`odin/src/`)
 
@@ -62,10 +72,12 @@ to seek) is implemented in `timeline_panel.odin`.
 | --------------------- | ---------------------------------------------------------------------------------------- |
 | `main.odin`           | window, main loop, input routing, cursor ring, status/message lines, script-path probing |
 | `app.odin`            | the one `App` struct                                                                     |
-| `brush.odin`          | the pencil: `Brush` state, `brush_paint` capsule primitive, blend modes                   |
+| `brush.odin`          | the pencil: `Brush` state, `brush_paint` capsule primitive, blend modes, per-tool defaults      |
 | `command.odin`        | `Command`/`Registry`, chord engine (retry + timeout), which-key, core commands           |
 | `canvas.odin`         | stroke pipeline (capsules straight into the keyframe texture), frame compositing         |
-| `timeline.odin`       | Layer/Keyframe model, `KeyPixels` (lazy alloc + COW), paint-target resolution |
+| `timeline.odin`       | Layer/Keyframe model, `KeyPixels` (lazy alloc + COW), paint-target resolution, key storage ids |
+| `storage.odin`        | `.reskia` save/load: hand-rolled zip writer/reader, zlib-stored writer, project.json (prototype schema) |
+| `storage_test.odin`   | headless zip/zlib/json round-trip tests                                                |
 | `lua_api.odin`        | `reskia.*` table, `g_app`/`g_context`, script load procs                                 |
 | `tablet_windows.odin` | WinTab backend (pressure only)                                                           |
 | `tablet_stub.odin`    | `#+build !windows` no-op backend                                                         |
@@ -102,6 +114,15 @@ to seek) is implemented in `timeline_panel.odin`.
 9. `lua54.dll` must sit next to `reskia.exe`; build.bat copies it.
 10. In `registry_handle_char`, both fixes matter: retry-after-dead-end AND the
     timeout — removing either breaks chords that share prefixes.
+11. `core:archive/zip` does not exist in this nightly; `core:compress/zlib`
+    inflates only. The .reskia writer is hand-rolled (stored entries /
+    stored deflate blocks) — don't look for a library to replace it with,
+    the formats are deliberate (prototype-compatible).
+12. RenderTexture readback (`LoadImageFromTexture`) is bottom-up: flip
+    before storing blobs (blobs are top-down). Loading uploads via a
+    normal texture drawn into a fresh RenderTexture, so loaded keys share
+    the paint path's Y convention. If a save/load round trip ever shows
+    flipped frames, one of those two flips is wrong.
 
 ## Roadmap (in the user's chosen order)
 
@@ -115,8 +136,10 @@ to seek) is implemented in `timeline_panel.odin`.
    the prototype: both stacks cleared on any frame navigation (step and panel
    click). Depth cap 16 (`UNDO_MAX`) to respect the Iris Xe's shared memory.
    Bindings `U`/`R`. GPU-to-GPU copies only, no CPU readback.
-5. Separate eraser brush memory (prototype eraser has its own size-30
-   brush; swap on tool switch).
+5. ~~Separate eraser brush memory~~ Done: `App` holds `brush` + `eraser`
+   (own size/color/opacity/mode each) and `tool: Tool`; everything goes
+   through `active_brush(app)`. Eraser default size 30 like the prototype.
+   `b`/`e` switch, `X` swaps.
 6. ~~Layer commands.~~ Done: model helpers in `timeline.odin`
    (`layer_unique_name`/`timeline_add_layer`/`timeline_delete_layer`/
    `timeline_move_layer`), commands + `l`-chords in `command.odin`
@@ -135,11 +158,17 @@ to seek) is implemented in `timeline_panel.odin`.
    occupied; pixels travel with the key). Press a key dot to drag, release to
    drop; amber target marker + source ghost like the prototype. Multi-select
    deliberately NOT done (see note below).
-7. `.reskia` ZIP save/load (project.json + zlib RGBA per keyframe, see
-   the format doc comment at the top of `../src/Timeline.py`). Then
-   stage-2 zlib-blob-as-truth + GPU cache behind the KeyPixels API.
+7. ~~`.reskia` ZIP save/load~~ Done: `storage.odin` (see Current state for
+   the no-zip-lib / stored-blocks situation). `project.reskia` probed at
+   startup (CWD, then exe dir), `s` saves. GPU readback on save flips Y;
+   load uploads via texture-into-RenderTexture. Next: stage-2
+   zlib-blob-as-truth + GPU cache behind the KeyPixels API, and possibly
+   real deflate inside `zlib_store` (files are currently ~8 MB/key —
+   matters because the projects live in Dropbox).
 8. Command palette / `:` line — hand-rolled over the registry (microui
-   rejected: too framework-y for the digestibility constraint).
+   rejected: too framework-y for the digestibility constraint). Also the
+   answer to open/save-as with real paths (prototype binds those to
+   Ctrl+O / Ctrl+S / Ctrl+N).
 
 ### Future tool ideas (user's list; discuss before implementing)
 

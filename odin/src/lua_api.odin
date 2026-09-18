@@ -12,8 +12,9 @@ import lua "vendor:lua/5.4"
 // The `reskia` table exposed to scripts:
 //   reskia.register(name, keys, fn)  -> add a command + chord
 //   reskia.exec(name)                -> run a command by name
-//   reskia.set_size(px)              -> brush size
-//   reskia.set_gray(v)               -> 0.0 .. 1.0
+//   reskia.set_tool("brush"|"eraser") -> switch tool
+//   reskia.set_size(px)              -> active tool's brush size
+//   reskia.set_gray(v)               -> 0.0 .. 1.0 (switches to pencil)
 //   reskia.frame()                   -> current frame number
 
 // The registry dispatch needs to reach the App; Odin's global for the lua
@@ -105,21 +106,24 @@ lua_exec :: proc "c" (L: ^lua.State) -> i32 {
 }
 
 lua_set_tool :: proc "c" (L: ^lua.State) -> i32 {
+	context = g_context
 	tool := lua.L_checkstring(L, 1)
-	g_app.brush.eraser = (tool == "eraser")
+	g_app.tool = string(tool) == "eraser" ? .Eraser : .Brush
 	return 0
 }
 
 lua_set_size :: proc "c" (L: ^lua.State) -> i32 {
-	g_app.brush.size = f32(lua.L_checknumber(L, 1))
+	context = g_context
+	active_brush(g_app).size = f32(lua.L_checknumber(L, 1))
 	return 0
 }
 
 lua_set_gray :: proc "c" (L: ^lua.State) -> i32 {
+	context = g_context
 	v := clamp(f32(lua.L_checknumber(L, 1)), 0, 1)
 	g := u8(v * 255)
 	g_app.brush.color = {g, g, g, 255}
-	g_app.brush.eraser = false
+	g_app.tool = .Brush
 	return 0
 }
 

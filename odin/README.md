@@ -15,15 +15,20 @@ no hidden machinery. If a feature can't fit this rule, it doesn't go in.
 | ------------------------- | --------------------------------------------------- |
 | `src/main.odin`           | Window, main loop, input routing, on-screen UI      |
 | `src/app.odin`            | The one `App` struct all state hangs off            |
+| `src/brush.odin`          | The pencil: `Brush` state, `brush_paint` capsule    |
 | `src/command.odin`        | Command registry, chord matching, which-key         |
-| `src/canvas.odin`         | Drawing surface + brush stroke pipeline             |
-| `src/timeline.odin`       | Project -> Layer -> Keyframe data model             |
+| `src/canvas.odin`         | Stroke pipeline + frame compositing (onion skin)    |
+| `src/timeline.odin`       | Layer/Keyframe model, `KeyPixels` (lazy + COW)      |
+| `src/timeline_panel.odin` | Vertical timeline overlay (click seek, key drag)    |
+| `src/undo.odin`           | Per-frame undo/redo (GPU texture snapshots)         |
+| `src/storage.odin`        | `.reskia` save/load (hand-rolled zip + zlib store)  |
 | `src/lua_api.odin`        | The `reskia.*` Lua table, command dispatch into Lua |
 | `src/tablet_windows.odin` | WinTab pressure (Windows)                           |
 | `src/tablet_stub.odin`    | No-op pressure for other platforms                  |
 
 Build: `build.bat` (or `odin build src -out:reskia.exe`).
 Run from this directory so `commands.lua` and `lua54.dll` are found.
+Test: `odin test src`.
 
 ## Stack
 
@@ -38,6 +43,16 @@ Run from this directory so `commands.lua` and `lua54.dll` are found.
 2. Lua is orchestration only. The brush and compositing hot paths never
    cross the Lua boundary.
 
+## Brush and tools
+
+Brush feel matches `Brush.py`: pressure drives size fully, opacity not
+at all; the stroke primitive is a pressure-width line with round caps
+(the prototype's default line mode, `spacing = 0.0`). Normal/multiply
+modes (`m1`/`m3`, cycle `M`); opacity `o1..o0`; eraser is true
+destination-out via a custom GL blend. Each tool keeps its own brush
+memory (prototype: the eraser is a separate size-30 brush); `b`/`e`
+switch, `X` swaps.
+
 ## Pressure
 
 WinTab, same as the prototype (Qt's `windows:wintab` platform). Only
@@ -45,19 +60,24 @@ pressure is read from the tablet; position comes from the cursor, so pen
 and mouse share one pipeline. A stroke snapshots at `begin` whether it is
 pen-driven, so holding the pen still mid-stroke keeps its pressure.
 
-Brush feel matches `Brush.py`: pressure drives size fully (`min + (size -
-min) * p`), opacity not at all; stamps spaced at 0.15 * size along each
-segment with per-stamp pressure interpolation; accumulation toggle (`A`);
-normal/multiply modes (`m1`/`m3`, cycle `M`); opacity `o1..o0`; eraser is
-true destination-out via a custom GL blend.
-
 If your tablet has "Use Windows Ink" enabled, pressure may not reach
 WinTab — disable it for Reskia, same rule as the prototype.
 
+## Storage
+
+`project.reskia` is probed at startup (CWD first, then exe dir, like
+`commands.lua`) and loaded if present; `s` saves. A .reskia file is a
+ZIP with `project.json` plus zlib-compressed RGBA per drawn keyframe,
+same schema as the prototype — files open in both apps. The Odin
+nightly has no zip package and its zlib is inflate-only, so the writer
+side (stored zip entries, stored deflate blocks) is hand-rolled in
+`storage.odin`; there is no real compression on save yet (~8 MB per
+drawn 1080p keyframe).
+
 ## Deliberately not here yet
 
-- Per-keyframe canvases and layer compositing (single surface for now)
-- `.reskia` ZIP storage (`core:archive/zip` + `core:compress/zlib`)
-- Undo (snapshot the render texture, or tile-based later)
-- Command palette / `:` line (microui is the candidate)
-- Separate eraser brush memory (prototype keeps size 30 per tool)
+- Stage-2 storage: zlib-blob-as-truth with the GPU texture as cache
+  (saves are currently uncompressed and load is eager)
+- Command palette / `:` line (hand-rolled over the registry; also the
+  answer to open/save-as with real paths)
+- Layer rename/lock (needs the `:` line for rename)
