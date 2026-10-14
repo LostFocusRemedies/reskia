@@ -1,6 +1,12 @@
 # RESKIA
 A Concept for a Minimalist Storyboard App.
 
+## [!NOTES]
+I'm actively (albeit slowly) rewriteing the whole thing from scratch. The main point for me is really to have an understanding of the project, and to write it in a way that is digestible by a single person. 
+
+
+## DESIGN IDEAS .
+
 `This is not for you.`
 In fact, it is for me. If you want to give it a go, please do but do not expect it to resonate with you. 
 
