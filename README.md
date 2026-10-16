@@ -2,8 +2,16 @@
 A Concept for a Minimalist Storyboard App.
 
 ## [!NOTES]
-I'm actively (albeit slowly) rewriteing the whole thing from scratch. The main point for me is really to have an understanding of the project, and to write it in a way that is digestible by a single person. 
+I'm actively (on my own time) rewriting the whole thing from scratch. The main point for me is really to have an understanding of the project, and to write it in a way that is digestible by a single person. 
+And it's a learning experience too. I will use* **Odinlang** and **Raylib**.
 
+I will keep the text below for the moment, as it document the design foundation of the app, and the idea behind it. 
+
+What drives this is the will to learn more, an itch to scratch in regards of user interface (which I may be completely wrong about), the thirst for simplicity and snappiness in my tools, and the frustration in the current landscape of software. 
+
+
+--- 
+Below the original readme.
 
 ## DESIGN IDEAS .
 
